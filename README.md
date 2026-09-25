@@ -23,6 +23,23 @@ Protected files need `SECURE_UPLOAD_DIR`, `FILE_ENCRYPTION_KEY` (64 hex chars) a
 Redis must be reachable at `REDIS_URL` (on Windows, Memurai works). If `mongodb+srv` fails with
 `querySrv ECONNREFUSED`, set `DNS_SERVERS=8.8.8.8,1.1.1.1` (local DNS cannot answer SRV queries).
 
+## Production (VPS)
+
+Live at **https://securechat.candledust.online** (API `/api/v1`, Socket.IO `/socket.io`, web app on `/`,
+APK on `/download/SecureChat-latest.apk`).
+
+| Part | Where |
+|---|---|
+| Code | `/opt/securechat/app` (user `securechat`), `.env` there (mode 600) |
+| Service | `systemctl status securechat-api` - port 4100, logs `journalctl -u securechat-api -f` |
+| Redis | local `redis-server` (127.0.0.1:6379) |
+| Files | `/opt/securechat/data/uploads`, `/opt/securechat/data/secure_uploads` |
+| Nginx | `/etc/nginx/sites-available/securechat.candledust.online` (Let's Encrypt SSL) |
+| Web app | `/var/www/securechat-web` (Flutter `build/web`) |
+| APK | `/var/www/securechat-downloads` |
+
+Update the API after pushing to `main`: `sudo /opt/securechat/deploy.sh`.
+
 ## Features (1-to-1)
 
 | Area | What works |
