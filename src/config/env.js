@@ -49,12 +49,6 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-// A hosted server has no local Redis: every API call would hang waiting for it.
-if (parsed.data.NODE_ENV === 'production' && /127\.0\.0\.1|localhost/.test(parsed.data.REDIS_URL)) {
-  console.error('REDIS_URL points to localhost. Set REDIS_URL to your hosted Redis (Render Key Value / Upstash / Railway Redis).');
-  process.exit(1);
-}
-
 export const env = Object.freeze({
   ...parsed.data,
   isProd: parsed.data.NODE_ENV === 'production',
