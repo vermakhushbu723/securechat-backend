@@ -1,0 +1,49 @@
+{
+  "name": "securechat-backend",
+  "version": "1.0.0",
+  "description": "SecureChat 1-to-1 realtime chat backend (Express, MongoDB, Socket.IO, Redis)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:cluster": "node src/cluster.js",
+    "dev": "node --watch src/server.js",
+    "worker": "node src/workers/index.js",
+    "db:indexes": "node scripts/sync-indexes.js",
+    "create:users": "node scripts/create-test-users.js",
+    "test:e2e": "node scripts/e2e-chat-test.js",
+    "seed:users": "node scripts/seed-users.js",
+    "seed:avatars": "node scripts/set-demo-avatars.js",
+    "test:groups": "node scripts/e2e-group-test.js",
+    "seed:groups": "node scripts/seed-demo-groups.js"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bcryptjs": "^3.0.3",
+    "bullmq": "^6.3.8",
+    "compression": "^1.8.2",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.10.2",
+    "multer": "^2.4.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "rate-limiter-flexible": "^11.2.1",
+    "sharp": "^0.35.4",
+    "socket.io": "^4.8.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}
