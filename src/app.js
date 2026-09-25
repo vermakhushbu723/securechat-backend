@@ -52,7 +52,8 @@ export function createApp() {
   app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
   app.get('/ready', async (_req, res) => {
     const mongo = mongoose.connection.readyState === 1;
-    const redisOk = (await redis.ping().catch(() => null)) === 'PONG';
+    const timeout = new Promise((resolve) => setTimeout(resolve, 3_000, null));
+    const redisOk = (await Promise.race([redis.ping().catch(() => null), timeout])) === 'PONG';
     res.status(mongo && redisOk ? 200 : 503).json({ ok: mongo && redisOk, mongo, redis: redisOk });
   });
 

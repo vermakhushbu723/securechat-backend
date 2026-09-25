@@ -14,6 +14,9 @@ export function createRedis(name, extra = {}) {
     connectionName: `securechat:${name}`,
     enableAutoPipelining: true,
     retryStrategy: (times) => Math.min(times * 200, 5_000),
+    connectTimeout: 10_000,
+    // Fail a command after a few retries instead of hanging the HTTP request.
+    maxRetriesPerRequest: 3,
     ...extra,
   });
   client.on('error', (err) => logger.error({ err: err.message, name }, 'Redis error'));
