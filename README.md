@@ -15,6 +15,7 @@ npm run seed:avatars        # profile photos (DP) for Priya, Rahul and Neha
 npm run test:e2e            # 45 realtime checks with the 2 users (server must be running)
 npm run test:groups         # 46 group checks with 5 users over real sockets
 npm run seed:groups         # demo groups with a real conversation (re-run replaces them)
+npm run test:auth           # 11 checks: mobile / email OTP, Personal / Business profile, search visibility
 ```
 
 Protected files need `SECURE_UPLOAD_DIR`, `FILE_ENCRYPTION_KEY` (64 hex chars) and `FILE_TOKEN_SECRET`;
@@ -44,13 +45,13 @@ Update the API after pushing to `main`: `sudo /opt/securechat/deploy.sh`.
 
 | Area | What works |
 |---|---|
-| Auth | Register, password login (phone / email / username), phone OTP, rotating refresh tokens with reuse detection, logout / logout everywhere |
+| Auth | One field login: mobile number (10 digit numbers get +91) or email ID -> 6 digit OTP; new accounts then pick Personal (name) or Business (business name, address, bio). Password login kept for test users. Rotating refresh tokens with reuse detection, logout / logout everywhere |
 | Messages | Text, emoji, image (auto thumbnail), video, audio, voice note, document, location, contact, sticker |
 | Message actions | Reply (quote), forward (up to 5 chats), edit (15 min), delete for me, delete for everyone (60 min), emoji reactions, star |
 | Realtime | New / updated / deleted messages, typing and recording indicators, online / last seen, sent → delivered → read ticks, multi-device sync |
 | Offline | Messages stored while offline, delivered on reconnect, `?after=` sync, idempotent retries (`clientMsgId`), push-notification queue |
 | Chats | List with unread counts and last message, pin (max 5), mute, archive, clear chat, delete chat, search in chat, media / docs / audio / links gallery |
-| Privacy | Block / unblock (no messages, typing or presence), hide last seen, disable read receipts, phone / email never exposed |
+| Privacy | "Anyone can find me" switch (hidden from user search), group location on / off, block / unblock (no messages, typing or presence), hide last seen, disable read receipts, phone / email never exposed |
 
 ## Features (groups)
 
