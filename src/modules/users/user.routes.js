@@ -11,6 +11,7 @@ const schemas = {
     name: z.string().trim().min(1).max(60).optional(),
     displayName: z.string().trim().min(1).max(20).optional(),
     about: z.string().trim().max(140).optional(),
+    businessAddress: z.string().trim().max(200).nullable().optional(),
     // Absolute URL or a file uploaded through /media/upload.
     avatarUrl: z.union([z.string().url().max(500), uploadPath]).nullable().optional(),
     username: z
@@ -23,9 +24,19 @@ const schemas = {
       .strictObject({
         lastSeen: z.enum(['everyone', 'nobody']).optional(),
         readReceipts: z.boolean().optional(),
+        searchable: z.boolean().optional(),
       })
       .optional(),
   }),
+  completeProfile: z.discriminatedUnion('accountType', [
+    z.strictObject({ accountType: z.literal('personal'), name: z.string().trim().min(1).max(60) }),
+    z.strictObject({
+      accountType: z.literal('business'),
+      businessName: z.string().trim().min(1).max(60),
+      businessAddress: z.string().trim().min(3).max(200),
+      bio: z.string().trim().max(140).default(''),
+    }),
+  ]),
   search: z.object({ q: z.string().trim().min(1).max(50), limit: z.coerce.number().int().min(1).max(50).default(20) }),
   presence: z.object({
     ids: z
@@ -45,6 +56,10 @@ router.get('/me', async (req, res) => {
 
 router.patch('/me', validate({ body: schemas.updateMe }), async (req, res) => {
   res.json({ ok: true, data: await users.updateMe(req.user.id, req.valid.body) });
+});
+
+router.post('/me/profile', validate({ body: schemas.completeProfile }), async (req, res) => {
+  res.json({ ok: true, data: await users.completeProfile(req.user.id, req.valid.body) });
 });
 
 router.post('/me/devices', validate({ body: schemas.device }), async (req, res) => {

@@ -88,39 +88,44 @@ export async function login({ identifier, password }) {
 }
 
 // ---------------------------------------------------------------------------
-// OTP auth (phone). Code is stored hashed in Redis with TTL + attempt limit.
+// OTP auth (mobile number or email ID). Code is stored hashed in Redis with TTL + attempt limit.
 // ---------------------------------------------------------------------------
 const OTP_TTL = 300;
 const OTP_MAX_ATTEMPTS = 5;
-const otpKey = (phone) => `otp:${phone}`;
+const otpKey = (value) => `otp:${value}`;
 const hash = (v) => createHash('sha256').update(v).digest();
 
-export async function requestOtp({ phone }) {
+export async function requestOtp({ kind, value }) {
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-  await redis.set(otpKey(phone), JSON.stringify({ h: hash(code).toString('hex'), a: 0 }), 'EX', OTP_TTL);
-  // Plug an SMS provider here. In dev mode the code is returned to the client.
-  return { expiresIn: OTP_TTL, ...(env.OTP_DEV_MODE ? { devCode: code } : {}) };
+  await redis.set(otpKey(value), JSON.stringify({ h: hash(code).toString('hex'), a: 0 }), 'EX', OTP_TTL);
+  // Plug an SMS (phone) / email provider here. In dev mode the code is returned to the client.
+  return { kind, sentTo: value, expiresIn: OTP_TTL, ...(env.OTP_DEV_MODE ? { devCode: code } : {}) };
 }
 
-export async function verifyOtp({ phone, code, name }) {
-  const raw = await redis.get(otpKey(phone));
+/** Existing account -> login. New account -> created with profileCompleted=false (Personal / Business step next). */
+export async function verifyOtp({ kind, value, code, name }) {
+  const raw = await redis.get(otpKey(value));
   if (!raw) throw ApiError.badRequest('Code expired, request a new one');
   const state = JSON.parse(raw);
   if (state.a >= OTP_MAX_ATTEMPTS) {
-    await redis.del(otpKey(phone));
+    await redis.del(otpKey(value));
     throw ApiError.tooMany('Too many attempts, request a new code');
   }
   const ok = timingSafeEqual(Buffer.from(state.h, 'hex'), hash(code));
   if (!ok) {
     state.a += 1;
-    await redis.set(otpKey(phone), JSON.stringify(state), 'KEEPTTL');
+    await redis.set(otpKey(value), JSON.stringify(state), 'KEEPTTL');
     throw ApiError.badRequest('Invalid code');
   }
-  await redis.del(otpKey(phone));
+  await redis.del(otpKey(value));
 
-  let user = await User.findOne({ phone }).lean();
+  let user = await User.findOne({ [kind]: value }).lean();
   const isNew = !user;
-  if (isNew) user = (await User.create({ phone, name: name ?? `User ${phone.slice(-4)}` })).toObject();
+  if (isNew) {
+    const fallback = kind === 'phone' ? `User ${value.slice(-4)}` : value.split('@')[0].slice(0, 60);
+    user = (await User.create({ [kind]: value, name: name ?? fallback, profileCompleted: false })).toObject();
+  }
   if (user.status !== 'active') throw ApiError.forbidden('Account is blocked', 'ACCOUNT_BLOCKED');
-  return { isNew, user: toSelfUser(user), ...(await issueTokens(user._id)) };
+  const self = toSelfUser(user);
+  return { isNew, profileCompleted: self.profileCompleted, user: self, ...(await issueTokens(user._id)) };
 }

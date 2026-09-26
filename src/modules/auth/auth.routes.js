@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { limiters, rateLimit } from '../../middlewares/rateLimit.js';
 import { validate } from '../../middlewares/validate.js';
 import * as auth from './auth.service.js';
+import { normalizeIdentifier } from './identifier.js';
 
 const phone = z.string().trim().regex(/^\+?[0-9]{8,15}$/, 'Invalid phone number');
 const password = z.string().min(8, 'Password must be at least 8 characters').max(128);
@@ -24,12 +25,28 @@ const schemas = {
     })
     .refine((b) => b.username || b.phone || b.email, { message: 'Provide username, phone or email' }),
   login: z.strictObject({ identifier: z.string().trim().min(3).max(100), password: z.string().min(1).max(128) }),
-  otpRequest: z.strictObject({ phone }),
-  otpVerify: z.strictObject({
-    phone,
-    code: z.string().regex(/^\d{6}$/),
-    name: z.string().trim().min(1).max(60).optional(),
-  }),
+  // One field: mobile number or email ID (`phone` kept for older app builds).
+  otpRequest: z
+    .strictObject({ identifier: z.string().trim().min(3).max(100).optional(), phone: phone.optional() })
+    .refine((b) => b.identifier || b.phone, { message: 'Enter mobile number or email ID' })
+    .transform((b, ctx) => {
+      const id = normalizeIdentifier(b.identifier ?? b.phone);
+      if (!id) ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
+      return id ?? z.NEVER;
+    }),
+  otpVerify: z
+    .strictObject({
+      identifier: z.string().trim().min(3).max(100).optional(),
+      phone: phone.optional(),
+      code: z.string().regex(/^\d{6}$/),
+      name: z.string().trim().min(1).max(60).optional(),
+    })
+    .refine((b) => b.identifier || b.phone, { message: 'Enter mobile number or email ID' })
+    .transform((b, ctx) => {
+      const id = normalizeIdentifier(b.identifier ?? b.phone);
+      if (!id) ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
+      return id ? { ...id, code: b.code, name: b.name } : z.NEVER;
+    }),
   refresh: z.strictObject({ refreshToken: z.string().min(10) }),
   logout: z.strictObject({ refreshToken: z.string().min(10), all: z.boolean().optional() }),
 };
@@ -49,7 +66,7 @@ router.post(
   '/otp/request',
   ipLimit,
   validate({ body: schemas.otpRequest }),
-  rateLimit(limiters.otp, (req) => req.valid.body.phone),
+  rateLimit(limiters.otp, (req) => req.valid.body.value),
   async (req, res) => {
     res.json({ ok: true, data: await auth.requestOtp(req.valid.body) });
   },

@@ -14,7 +14,8 @@
     "seed:users": "node scripts/seed-users.js",
     "seed:avatars": "node scripts/set-demo-avatars.js",
     "test:groups": "node scripts/e2e-group-test.js",
-    "seed:groups": "node scripts/seed-demo-groups.js"
+    "seed:groups": "node scripts/seed-demo-groups.js",
+    "test:auth": "node scripts/e2e-auth-test.js"
   },
   "author": "",
   "license": "UNLICENSED",

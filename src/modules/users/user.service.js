@@ -21,16 +21,41 @@ export async function getMe(userId) {
 
 export async function updateMe(userId, patch) {
   const set = {};
-  for (const k of ['name', 'displayName', 'about', 'avatarUrl', 'username']) if (patch[k] !== undefined) set[k] = patch[k];
+  for (const k of ['name', 'displayName', 'about', 'avatarUrl', 'username', 'businessAddress']) if (patch[k] !== undefined) set[k] = patch[k];
   if (set.name) set.searchName = set.name.toLowerCase();
   if (patch.privacy?.lastSeen) set['privacy.lastSeen'] = patch.privacy.lastSeen;
   if (patch.privacy?.readReceipts !== undefined) set['privacy.readReceipts'] = patch.privacy.readReceipts;
+  if (patch.privacy?.searchable !== undefined) set['privacy.searchable'] = patch.privacy.searchable;
 
   const user = await User.findByIdAndUpdate(userId, { $set: set }, { returnDocument: 'after', runValidators: true }).lean();
   if (!user) throw ApiError.notFound('User not found');
   await invalidateUser(userId);
   const self = toSelfUser(user);
   emitToUser(userId, 'user:updated', self); // sync other devices
+  return self;
+}
+
+/**
+ * Signup step after the first OTP login.
+ * Personal: name only. Business: business name (shown as the name), business address and bio.
+ */
+export async function completeProfile(userId, input) {
+  const business = input.accountType === 'business';
+  const name = business ? input.businessName : input.name;
+  const set = {
+    accountType: input.accountType,
+    name,
+    searchName: name.toLowerCase(),
+    displayName: name.slice(0, 20),
+    businessAddress: business ? input.businessAddress : null,
+    profileCompleted: true,
+  };
+  if (business && input.bio !== undefined) set.about = input.bio;
+  const user = await User.findByIdAndUpdate(userId, { $set: set }, { returnDocument: 'after', runValidators: true }).lean();
+  if (!user) throw ApiError.notFound('User not found');
+  await invalidateUser(userId);
+  const self = toSelfUser(user);
+  emitToUser(userId, 'user:updated', self);
   return self;
 }
 
@@ -41,9 +66,11 @@ export async function search(userId, q, limit) {
   const users = await User.find({
     _id: { $ne: userId },
     status: 'active',
+    // "Anyone can find me" turned off in Settings -> never listed in search.
+    'privacy.searchable': { $ne: false },
     $or: [{ username: rx }, { searchName: rx }, { phone: q.trim() }],
   })
-    .select('name displayName username avatarUrl about lastSeenAt privacy')
+    .select('name displayName username avatarUrl about lastSeenAt privacy accountType businessAddress')
     .limit(limit)
     .lean();
   const online = await onlineMap(users.map((u) => u._id));

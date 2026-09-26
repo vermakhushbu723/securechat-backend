@@ -23,7 +23,7 @@ export async function getPublicUsers(ids) {
 
   if (missing.length) {
     const users = await User.find({ _id: { $in: missing } })
-      .select('name displayName username avatarUrl about lastSeenAt privacy')
+      .select('name displayName username avatarUrl about lastSeenAt privacy accountType businessAddress')
       .lean();
     const pipe = redis.pipeline();
     for (const u of users) {

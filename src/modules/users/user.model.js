@@ -24,10 +24,17 @@ const userSchema = new Schema(
     passwordHash: { type: String, select: false },
     avatarUrl: { type: String, default: null },
     about: { type: String, default: 'Hey there! I am using SecureChat.', maxlength: 140 },
+    // Signup: Personal (name only) or Business (business name + address + bio). For business, name = business name.
+    accountType: { type: String, enum: ['personal', 'business'], default: 'personal' },
+    businessAddress: { type: String, trim: true, maxlength: 200, default: null },
+    // false right after the first OTP login until the Personal / Business form is filled.
+    profileCompleted: { type: Boolean, default: true },
     lastSeenAt: { type: Date, default: null },
     privacy: {
       lastSeen: { type: String, enum: ['everyone', 'nobody'], default: 'everyone' },
       readReceipts: { type: Boolean, default: true },
+      // Settings: "Anyone can find me by user ID / name". Off = hidden from user search.
+      searchable: { type: Boolean, default: true },
     },
     devices: { type: [deviceSchema], default: [], select: false },
     // Location privacy (Location Sharing screen): none | join (once while joining) | live (interval).
@@ -63,6 +70,8 @@ export function toPublicUser(u) {
     username: u.username ?? null,
     avatarUrl: u.avatarUrl ?? null,
     about: u.about ?? '',
+    accountType: u.accountType ?? 'personal',
+    businessAddress: u.accountType === 'business' ? (u.businessAddress ?? null) : null,
     lastSeenAt: hideLastSeen ? null : (u.lastSeenAt ?? null),
   };
 }
@@ -74,7 +83,12 @@ export function toSelfUser(u) {
     lastSeenAt: u.lastSeenAt ?? null,
     phone: u.phone ?? null,
     email: u.email ?? null,
-    privacy: { lastSeen: u.privacy?.lastSeen ?? 'everyone', readReceipts: u.privacy?.readReceipts ?? true },
+    privacy: {
+      lastSeen: u.privacy?.lastSeen ?? 'everyone',
+      readReceipts: u.privacy?.readReceipts ?? true,
+      searchable: u.privacy?.searchable ?? true,
+    },
+    profileCompleted: u.profileCompleted !== false,
     locationSettings: {
       mode: u.locationSettings?.mode ?? 'join',
       intervalMin: u.locationSettings?.intervalMin ?? 10,
