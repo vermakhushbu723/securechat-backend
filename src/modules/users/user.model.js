@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 
+import { accessOf } from '../subscription/access.js';
+
 const { Schema } = mongoose;
 
 const deviceSchema = new Schema(
@@ -18,6 +20,8 @@ const userSchema = new Schema(
     displayName: { type: String, trim: true, maxlength: 20, default: null },
     // Lower-cased copy of name for anchored prefix search (index friendly).
     searchName: { type: String, index: true },
+    // Lower-cased words of name + username: "test" finds "AB TEST COMPANY" (multikey prefix index).
+    searchTokens: { type: [String], index: true, default: [] },
     username: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
     phone: { type: String, trim: true, unique: true, sparse: true },
     email: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
@@ -35,6 +39,8 @@ const userSchema = new Schema(
       readReceipts: { type: Boolean, default: true },
       // Settings: "Anyone can find me by user ID / name". Off = hidden from user search.
       searchable: { type: Boolean, default: true },
+      // Settings: show my mobile number & email to other users (off = always hidden).
+      showContact: { type: Boolean, default: false },
     },
     devices: { type: [deviceSchema], default: [], select: false },
     // Location privacy (Location Sharing screen): none | join (once while joining) | live (interval).
@@ -43,6 +49,13 @@ const userSchema = new Schema(
       intervalMin: { type: Number, enum: [0, 5, 10, 30], default: 10 }, // 0 = manual
       liveUntil: { type: Date, default: null }, // My Location: share live for 15 min / 1 h / 8 h / until stopped
     },
+    // 7 day trial from createdAt; premium bought / extension approved by the admin.
+    subscription: {
+      premiumUntil: { type: Date, default: null },
+      extendedUntil: { type: Date, default: null },
+      graceAt: { type: Date, default: null }, // one time grace given when plans were introduced
+      trialEndsAt: { type: Date, default: null }, // admin override of the 7 day trial
+    },
     // Content policy violations ("Warning 1 of 5").
     warnings: { type: Number, default: 0 },
     status: { type: String, enum: ['active', 'blocked'], default: 'active' },
@@ -50,8 +63,18 @@ const userSchema = new Schema(
   { timestamps: true },
 );
 
+/** Words used by user search: every word of the name and the username. */
+export function searchTokensOf(name, username) {
+  const words = `${name ?? ''} ${username ?? ''}`
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_.]+/u)
+    .filter(Boolean);
+  return [...new Set(words)].slice(0, 20);
+}
+
 userSchema.pre('validate', function setSearchName() {
   if (this.isModified('name')) this.searchName = this.name.toLowerCase();
+  if (this.isModified('name') || this.isModified('username')) this.searchTokens = searchTokensOf(this.name, this.username);
 });
 
 export const User = mongoose.model('User', userSchema);
@@ -72,6 +95,8 @@ export function toPublicUser(u) {
     about: u.about ?? '',
     accountType: u.accountType ?? 'personal',
     businessAddress: u.accountType === 'business' ? (u.businessAddress ?? null) : null,
+    // Only when the owner turned on "Show mobile number & email".
+    ...(u.privacy?.showContact ? { phone: u.phone ?? null, email: u.email ?? null } : {}),
     lastSeenAt: hideLastSeen ? null : (u.lastSeenAt ?? null),
   };
 }
@@ -87,7 +112,9 @@ export function toSelfUser(u) {
       lastSeen: u.privacy?.lastSeen ?? 'everyone',
       readReceipts: u.privacy?.readReceipts ?? true,
       searchable: u.privacy?.searchable ?? true,
+      showContact: u.privacy?.showContact ?? false,
     },
+    subscription: accessOf(u),
     profileCompleted: u.profileCompleted !== false,
     locationSettings: {
       mode: u.locationSettings?.mode ?? 'join',

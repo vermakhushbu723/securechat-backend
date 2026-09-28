@@ -9,6 +9,7 @@ import { toObjectId } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
 import { SecureFile } from '../files/secureFile.model.js';
 import { LocationHistory } from '../location/location.model.js';
+import { getAccess, groupAccessBlock, groupPremiumInfo } from '../subscription/subscription.service.js';
 import {
   adminIds,
   canEditInfo,
@@ -92,14 +93,17 @@ async function detailDTO(groupId, userId) {
   if (!g || g.status === 'deleted') throw ApiError.notFound('Group not found');
   if (!member || member.status !== 'active') throw ApiError.forbidden('You are not a member of this group', 'NOT_MEMBER');
   const creator = await getPublicUser(g.createdBy);
-  const block = sendBlockReason({ ...g, settings: g.settings }, member, 'text');
-  const mediaBlock = sendBlockReason({ ...g, settings: g.settings }, member, 'image');
+  const planBlock = await groupAccessBlock(userId, g);
+  const block = sendBlockReason({ ...g, settings: g.settings }, member, 'text') ?? planBlock;
+  const mediaBlock = sendBlockReason({ ...g, settings: g.settings }, member, 'image') ?? planBlock;
+  const premium = await groupPremiumInfo(g);
   return {
     ...summaryDTO(g, member, userId),
     rules: g.rules,
     createdBy: { id: String(g.createdBy), displayName: creator?.displayName ?? 'Member' },
     createdAt: g.createdAt,
     settings: g.settings,
+    premium,
     me: {
       userId: String(userId),
       role: member.role,
@@ -111,6 +115,9 @@ async function detailDTO(groupId, userId) {
       sendBlockedReason: block ? { code: block[0], message: block[1] } : null,
       canSendMedia: !mediaBlock,
       canEditInfo: canEditInfo(g, member),
+      // Own trial / premium, or the group's premium when the creator allows it.
+      canOpenProtected: !planBlock,
+      plan: (await getAccess(userId)).access,
       location: member.location ?? null,
     },
   };
@@ -345,6 +352,12 @@ export async function memberProfile(userId, groupId, targetId) {
     online: blockedMe ? false : dto.online,
     lastSeenAt: blockedMe ? null : dto.lastSeenAt,
     groupName: group.name,
+    // Only when the member turned on "Show mobile number & email".
+    phone: users.get(String(targetId))?.phone ?? null,
+    email: users.get(String(targetId))?.email ?? null,
+    accountType: users.get(String(targetId))?.accountType ?? 'personal',
+    businessAddress: users.get(String(targetId))?.businessAddress ?? null,
+    about: users.get(String(targetId))?.about ?? '',
     isBlocked: blocked,
     sharedMediaCount: sharedMedia,
     location: canSeeLocation ? m.location : null,

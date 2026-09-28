@@ -14,6 +14,8 @@ import { enqueuePush } from '../../services/queue.service.js';
 import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { escapeRegex, toObjectId } from '../../utils/validators.js';
+import { SecureFile } from '../files/secureFile.model.js';
+import { requireOwnAccess } from '../subscription/subscription.service.js';
 import { User } from '../users/user.model.js';
 import { Conversation, pairKeyOf } from './conversation.model.js';
 import { ConversationMember } from './conversationMember.model.js';
@@ -35,6 +37,9 @@ async function assertMember(conversationId, userId) {
   if (!participants?.includes(String(userId))) throw ApiError.notFound('Conversation not found');
   return { participants, peerId: participants.find((p) => p !== String(userId)) };
 }
+
+/** Direct message visible to this user (sender or recipient, not deleted for them). */
+export const loadDirectMessageForUser = (messageId, userId) => loadMessageForUser(messageId, userId);
 
 async function loadMessageForUser(messageId, userId) {
   const m = await Message.findById(messageId).lean();
@@ -267,6 +272,31 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
   if (await isBlockedBetween(senderId, peerId)) {
     throw ApiError.forbidden('You cannot send messages to this user', 'BLOCKED');
   }
+  await requireOwnAccess(senderId);
+
+  // Protected media must be an encrypted file owned by the sender and not yet attached.
+  const visibility = forwardedFrom ? 'public' : (input.visibility ?? 'public');
+  let media = input.media;
+  let secureFile = null;
+  if (media?.secureFileId) {
+    secureFile = await SecureFile.findOne({ _id: media.secureFileId, owner: senderId, message: null, dmMessage: null }).lean();
+    if (!secureFile) throw ApiError.badRequest('File not found or already attached');
+    media = {
+      secureFileId: secureFile._id,
+      mimeType: secureFile.mimeType,
+      name: secureFile.name,
+      size: secureFile.size,
+      width: secureFile.width,
+      height: secureFile.height,
+      duration: secureFile.duration ?? media.duration,
+    };
+  } else if (media) {
+    const { kind: _k, ...rest } = media;
+    media = rest;
+    if (visibility !== 'public') {
+      throw new ApiError(400, 'SECURE_UPLOAD_REQUIRED', 'Private and Highly Protected files must be uploaded as secure files');
+    }
+  }
 
   let replyTo;
   if (input.replyToId) {
@@ -282,10 +312,12 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
     clientMsgId: input.clientMsgId,
     type: input.type,
     text: input.text?.trim() ?? '',
-    media: input.media,
+    media,
     location: input.location,
     contact: input.contact,
     replyTo,
+    visibility,
+    viewOnce: visibility !== 'public' && Boolean(input.viewOnce),
     forwarded: Boolean(forwardedFrom),
     forwardCount: forwardedFrom ? forwardedFrom.forwardCount + 1 : 0,
   };
@@ -299,6 +331,8 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
     const existing = await Message.findOne({ sender: senderId, clientMsgId: input.clientMsgId }).lean();
     return { message: toMessageDTO(existing, senderId), duplicate: true };
   }
+
+  if (secureFile) await SecureFile.updateOne({ _id: secureFile._id }, { $set: { dmMessage: msg._id } });
 
   const at = msg.createdAt;
   await Promise.all([
@@ -565,6 +599,7 @@ export async function deleteMessage(userId, { messageId, scope }) {
     },
     { returnDocument: 'after', lean: true },
   );
+  if (m.media?.secureFileId) await SecureFile.updateOne({ _id: m.media.secureFileId }, { $set: { revokedAt: new Date() } });
   await Conversation.updateOne(
     { _id: m.conversation, 'lastMessage.id': m._id },
     { $set: { 'lastMessage.deleted': true, 'lastMessage.text': previewText(updated) } },
@@ -607,6 +642,9 @@ export async function starMessage(userId, { messageId, starred }) {
 export async function forwardMessage(userId, { messageId, toUserIds, clientMsgId }) {
   const src = await loadMessageForUser(messageId, userId);
   if (src.deletedForEveryone) throw ApiError.badRequest('Message was deleted');
+  if ((src.visibility ?? 'public') !== 'public' || src.media?.secureFileId || src.viewOnce) {
+    throw ApiError.forbidden('Private and Highly Protected messages cannot be forwarded', 'FORWARD_NOT_ALLOWED');
+  }
   const targets = [...new Set(toUserIds.map(String))];
   const results = [];
   for (const [i, toUserId] of targets.entries()) {

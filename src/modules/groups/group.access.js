@@ -24,7 +24,7 @@ export async function getGroup(groupId) {
   const cached = await redis.get(gKey(groupId));
   if (cached) return cached === 'null' ? null : JSON.parse(cached);
   const g = await Group.findById(groupId)
-    .select('name description category rules avatarUrl createdBy status memberCount settings createdAt')
+    .select('name description category rules avatarUrl createdBy status memberCount settings premium createdAt')
     .lean();
   const value = g ? { ...g, _id: String(g._id), createdBy: String(g.createdBy) } : null;
   await redis.set(gKey(groupId), JSON.stringify(value), 'EX', value ? GROUP_TTL : 30);

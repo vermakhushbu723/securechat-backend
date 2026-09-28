@@ -11,7 +11,8 @@ import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { escapeRegex } from '../../utils/validators.js';
 import { Block } from './block.model.js';
-import { toPublicUser, toSelfUser, User } from './user.model.js';
+import { normalizeIdentifier } from '../auth/identifier.js';
+import { searchTokensOf, toPublicUser, toSelfUser, User } from './user.model.js';
 
 export async function getMe(userId) {
   const user = await User.findById(userId).lean();
@@ -23,9 +24,14 @@ export async function updateMe(userId, patch) {
   const set = {};
   for (const k of ['name', 'displayName', 'about', 'avatarUrl', 'username', 'businessAddress']) if (patch[k] !== undefined) set[k] = patch[k];
   if (set.name) set.searchName = set.name.toLowerCase();
+  if (set.name !== undefined || set.username !== undefined) {
+    const cur = await User.findById(userId).select('name username').lean();
+    set.searchTokens = searchTokensOf(set.name ?? cur?.name, set.username ?? cur?.username);
+  }
   if (patch.privacy?.lastSeen) set['privacy.lastSeen'] = patch.privacy.lastSeen;
   if (patch.privacy?.readReceipts !== undefined) set['privacy.readReceipts'] = patch.privacy.readReceipts;
   if (patch.privacy?.searchable !== undefined) set['privacy.searchable'] = patch.privacy.searchable;
+  if (patch.privacy?.showContact !== undefined) set['privacy.showContact'] = patch.privacy.showContact;
 
   const user = await User.findByIdAndUpdate(userId, { $set: set }, { returnDocument: 'after', runValidators: true }).lean();
   if (!user) throw ApiError.notFound('User not found');
@@ -47,6 +53,7 @@ export async function completeProfile(userId, input) {
     name,
     searchName: name.toLowerCase(),
     displayName: name.slice(0, 20),
+    searchTokens: searchTokensOf(name, (await User.findById(userId).select('username').lean())?.username),
     businessAddress: business ? input.businessAddress : null,
     profileCompleted: true,
   };
@@ -59,18 +66,25 @@ export async function completeProfile(userId, input) {
   return self;
 }
 
-/** Prefix search on username / name, or exact phone. Uses indexes only. */
+/**
+ * Search by any word of the name / business name / username (prefix, so "tes" finds
+ * "AB TEST COMPANY"), or by the exact mobile number (with or without +91) / email ID.
+ * Users who turned off "Anyone can find me" are never listed. Uses indexes only.
+ */
 export async function search(userId, q, limit) {
-  const term = q.trim().toLowerCase();
-  const rx = new RegExp(`^${escapeRegex(term)}`);
+  // A full mobile number / email ID is an exact lookup; anything else searches names.
+  const id = normalizeIdentifier(q);
+  const words = id ? [] : searchTokensOf(q.trim(), '').slice(0, 5);
+  const or = id ? [{ [id.kind]: id.value }] : [];
+  if (words.length) or.push({ searchTokens: { $all: words.map((w) => new RegExp(`^${escapeRegex(w)}`)) } });
+  if (!or.length) return [];
   const users = await User.find({
     _id: { $ne: userId },
     status: 'active',
-    // "Anyone can find me" turned off in Settings -> never listed in search.
     'privacy.searchable': { $ne: false },
-    $or: [{ username: rx }, { searchName: rx }, { phone: q.trim() }],
+    $or: or,
   })
-    .select('name displayName username avatarUrl about lastSeenAt privacy accountType businessAddress')
+    .select('name displayName username avatarUrl about lastSeenAt privacy accountType businessAddress phone email')
     .limit(limit)
     .lean();
   const online = await onlineMap(users.map((u) => u._id));

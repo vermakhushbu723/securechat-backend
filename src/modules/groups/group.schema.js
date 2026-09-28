@@ -32,6 +32,7 @@ export const settingsInput = z.strictObject({
       approveNewMembers: z.boolean().optional(),
       restrictNewMembers: z.boolean().optional(),
       muteGroup: z.boolean().optional(),
+      freeAccess: z.boolean().optional(),
     })
     .optional(),
   security: z

@@ -38,6 +38,8 @@ const schema = z.object({
   DELETE_FOR_EVERYONE_WINDOW_MIN: z.coerce.number().positive().default(60),
 
   OTP_DEV_MODE: bool('false'),
+  // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
+  ADMIN_API_KEY: z.string().default(''),
   RUN_WORKERS: bool('true'),
   CLUSTER_WORKERS: z.coerce.number().int().min(0).default(0),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),

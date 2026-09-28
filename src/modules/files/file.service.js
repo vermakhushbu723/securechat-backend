@@ -78,5 +78,8 @@ export function logFileAction(fileId, userId, action, ip) {
 /** Revokes every file attached to the given messages (delete / expiry). */
 export async function revokeFilesOfMessages(messageIds) {
   if (!messageIds.length) return;
-  await SecureFile.updateMany({ message: { $in: messageIds }, revokedAt: null }, { $set: { revokedAt: new Date() } });
+  await SecureFile.updateMany(
+    { $or: [{ message: { $in: messageIds } }, { dmMessage: { $in: messageIds } }], revokedAt: null },
+    { $set: { revokedAt: new Date() } },
+  );
 }

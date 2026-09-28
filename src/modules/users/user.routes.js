@@ -25,6 +25,7 @@ const schemas = {
         lastSeen: z.enum(['everyone', 'nobody']).optional(),
         readReceipts: z.boolean().optional(),
         searchable: z.boolean().optional(),
+        showContact: z.boolean().optional(),
       })
       .optional(),
   }),

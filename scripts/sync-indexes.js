@@ -13,6 +13,7 @@ import { GroupMessage } from '../src/modules/groups/groupMessage.model.js';
 import { LocationHistory } from '../src/modules/location/location.model.js';
 import { PlatformSetting } from '../src/modules/platform/platform.service.js';
 import { Report } from '../src/modules/reports/report.model.js';
+import { ExtensionRequest } from '../src/modules/subscription/extensionRequest.model.js';
 
 await connectMongo();
 for (const model of [
@@ -28,6 +29,7 @@ for (const model of [
   SecureFile,
   FileAccessLog,
   LocationHistory,
+  ExtensionRequest,
   Report,
   AuditLog,
   PlatformSetting,

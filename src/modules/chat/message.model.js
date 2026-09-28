@@ -15,6 +15,8 @@ const mediaSchema = new Schema(
     width: Number,
     height: Number,
     duration: Number, // seconds (audio / voice / video)
+    // Private / Highly Protected: encrypted file, opened only through the secure viewer.
+    secureFileId: { type: Schema.Types.ObjectId, ref: 'SecureFile' },
   },
   { _id: false },
 );
@@ -62,6 +64,10 @@ const messageSchema = new Schema(
       default: undefined,
     },
     replyTo: { type: replySchema, default: undefined },
+    // Privacy level chosen by the sender (same levels as groups).
+    visibility: { type: String, enum: ['public', 'private', 'highly_protected'], default: 'public' },
+    viewOnce: { type: Boolean, default: false },
+    openedBy: { type: [Schema.Types.ObjectId], default: [] },
     forwarded: { type: Boolean, default: false },
     forwardCount: { type: Number, default: 0 },
     reactions: { type: [reactionSchema], default: [] },
@@ -88,6 +94,7 @@ export const Message = mongoose.model('Message', messageSchema);
 
 export function previewText(m) {
   if (m.deletedForEveryone) return 'This message was deleted';
+  if (m.media?.secureFileId) return m.type === 'image' ? '🔒 Protected photo' : m.type === 'video' ? '🔒 Protected video' : '🔒 Protected file';
   switch (m.type) {
     case 'text':
       return m.text.slice(0, 120);
@@ -112,6 +119,22 @@ export function previewText(m) {
   }
 }
 
+/** Protected files never carry a URL: the secure viewer asks for a short-lived token. */
+function secureMediaDTO(media) {
+  if (!media) return null;
+  if (!media.secureFileId) return media;
+  return {
+    secure: true,
+    fileId: String(media.secureFileId),
+    mimeType: media.mimeType,
+    name: media.name ?? null,
+    size: media.size ?? 0,
+    width: media.width ?? null,
+    height: media.height ?? null,
+    duration: media.duration ?? null,
+  };
+}
+
 /** Serializes a message for one viewer (starred flag and status are viewer specific). */
 export function toMessageDTO(m, viewerId) {
   const viewer = String(viewerId);
@@ -124,7 +147,15 @@ export function toMessageDTO(m, viewerId) {
     recipientId: String(m.recipient),
     type: m.type,
     text: deleted ? '' : m.text,
-    media: deleted ? null : (m.media ?? null),
+    media: secureMediaDTO(deleted ? null : m.media),
+    visibility: m.visibility ?? 'public',
+    viewOnce: Boolean(m.viewOnce),
+    // Private / Highly Protected: no forward, copy or download.
+    permissions: {
+      canForward: (m.visibility ?? 'public') === 'public' && !m.viewOnce,
+      canCopy: (m.visibility ?? 'public') === 'public',
+      allowDownload: (m.visibility ?? 'public') === 'public',
+    },
     location: deleted ? null : (m.location ?? null),
     contact: deleted ? null : m.contact ? { ...m.contact, userId: m.contact.userId ? String(m.contact.userId) : null } : null,
     replyTo:

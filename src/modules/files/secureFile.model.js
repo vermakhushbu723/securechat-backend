@@ -23,12 +23,15 @@ const secureFileSchema = new Schema(
     // Set when attached to a message; one file belongs to one message.
     message: { type: Schema.Types.ObjectId, ref: 'GroupMessage', default: null },
     group: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
+    // Direct (1-to-1) chat message the file is attached to.
+    dmMessage: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
     revokedAt: { type: Date, default: null }, // message deleted / expired
   },
   { timestamps: true },
 );
 
 secureFileSchema.index({ message: 1 });
+secureFileSchema.index({ dmMessage: 1 });
 
 export const SecureFile = mongoose.model('SecureFile', secureFileSchema);
 

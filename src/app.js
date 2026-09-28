@@ -22,6 +22,7 @@ import {
   reportRouter,
   streamSecureFile,
 } from './modules/groups/group.routes.js';
+import { adminRouter, subscriptionRouter } from './modules/subscription/subscription.routes.js';
 import mediaRoutes, { UPLOAD_ROOT } from './modules/media/media.routes.js';
 import userRoutes from './modules/users/user.routes.js';
 
@@ -78,6 +79,8 @@ export function createApp() {
   // Public: invite preview (join page before login) and token-authenticated secure file stream.
   api.use('/invites', inviteRouter);
   api.get('/files/stream', streamSecureFile);
+  // Platform admin (x-admin-key), separate from user auth.
+  api.use('/admin', adminRouter);
   api.use(requireAuth);
   api.use('/users', userRoutes);
   api.use('/conversations', conversationRouter);
@@ -88,6 +91,7 @@ export function createApp() {
   api.use('/files', fileRouter);
   api.use('/location', locationRouter);
   api.use('/reports', reportRouter);
+  api.use('/subscription', subscriptionRouter);
   app.use('/api/v1', api);
 
   app.use(notFoundHandler);

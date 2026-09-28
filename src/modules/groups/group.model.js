@@ -26,6 +26,9 @@ const settingsSchema = new Schema(
       approveNewMembers: { type: Boolean, default: false },
       restrictNewMembers: { type: Boolean, default: false }, // read only for the first 24 hours
       muteGroup: { type: Boolean, default: false }, // only admins can post
+      // Creator option: members without their own premium may reply and open protected
+      // files while the group is premium (creator has premium or the admin approved it).
+      freeAccess: { type: Boolean, default: false },
     },
     security: {
       publicForwarding: { type: Boolean, default: true },
@@ -73,6 +76,12 @@ const groupSchema = new Schema(
     settings: { type: settingsSchema, default: () => ({}) },
     lastMessage: { type: lastMessageSchema, default: null },
     lastMessageAt: { type: Date, default: null },
+    // Premium approved by the platform admin (independent of the creator's plan).
+    premium: {
+      approved: { type: Boolean, default: false },
+      approvedAt: { type: Date, default: null },
+      approvedUntil: { type: Date, default: null }, // null = no end date
+    },
   },
   { timestamps: true },
 );

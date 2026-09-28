@@ -22,6 +22,18 @@ export const mediaInput = z.strictObject({
   duration: z.number().nonnegative().max(86_400).nullish(),
 });
 
+/** Encrypted upload (`/media/upload` with secure=true) for Private / Highly Protected. */
+export const secureMediaInput = z.strictObject({
+  secure: z.literal(true).optional(),
+  kind: z.string().max(20).optional(),
+  secureFileId: objectId,
+  url: z.null().optional(),
+  mimeType: z.string().max(120).optional(),
+  name: z.string().max(255).optional(),
+  size: z.number().int().nonnegative().optional(),
+  duration: z.number().nonnegative().max(86_400).nullish(),
+});
+
 export const sendMessageInput = z
   .strictObject({
     conversationId: objectId.optional(),
@@ -29,7 +41,9 @@ export const sendMessageInput = z
     clientMsgId: z.string().min(8).max(64),
     type: z.enum(MESSAGE_TYPES),
     text: z.string().max(10_000).default(''),
-    media: mediaInput.optional(),
+    media: z.union([mediaInput, secureMediaInput]).optional(),
+    visibility: z.enum(['public', 'private', 'highly_protected']).default('public'),
+    viewOnce: z.boolean().optional(),
     location: z
       .strictObject({
         lat: z.number().min(-90).max(90),

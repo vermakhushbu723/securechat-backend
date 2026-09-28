@@ -14,6 +14,9 @@ import { audit } from '../audit/audit.service.js';
 import { logFileAction, revokeFilesOfMessages, signFileToken } from '../files/file.service.js';
 import { FileAccessLog, SecureFile } from '../files/secureFile.model.js';
 import { getContentSettings } from '../platform/platform.service.js';
+import { loadDirectMessageForUser } from '../chat/chat.service.js';
+import { Message } from '../chat/message.model.js';
+import { requireGroupAccessPlan, requireOwnAccess } from '../subscription/subscription.service.js';
 import { displayNameOf, User } from '../users/user.model.js';
 import {
   effectiveVisibility,
@@ -174,6 +177,7 @@ export async function sendGroupMessage(userId, input, { forwardFrom = null, skip
   const { group, member } = await requireGroupAccess(groupId, userId);
   const blocked = sendBlockReason(group, member, input.type);
   if (blocked) throw ApiError.forbidden(blocked[1], blocked[0]);
+  await requireGroupAccessPlan(userId, group);
 
   const visibility = forwardFrom ? forwardFrom.visibility : effectiveVisibility(group, input.visibility);
   if (!skipContent) await enforceContent(userId, groupId, group, input.text);
@@ -727,21 +731,35 @@ export async function deletionStatus(userId, messageId) {
 // ===========================================================================
 const maskedId = (userId) => `USR-****${String(userId).slice(-4).toUpperCase()}`;
 
+/** Group file -> { file, m, group, member }; direct chat file -> { file, m, dm: true }. */
 async function fileContext(userId, fileId) {
   const file = await SecureFile.findById(fileId).lean();
+  if (file?.dmMessage) {
+    const m = await loadDirectMessageForUser(file.dmMessage, userId);
+    return { file, m, dm: true };
+  }
   if (!file?.message) throw ApiError.notFound('File not found');
   const { m, group, member } = await loadMessageForUser(file.message, userId);
   return { file, m, group, member };
 }
 
+/** Header of the secure viewer: sender, time, file name and the caption the sender added. */
+async function viewerInfo(m) {
+  const sender = await getPublicUser(m.sender);
+  return { senderName: sender?.displayName ?? sender?.name ?? 'Member', sentAt: m.createdAt, caption: m.text ?? '' };
+}
+
 export async function issueFileToken(userId, fileId, ip) {
-  const { file, m, group, member } = await fileContext(userId, fileId);
+  const { file, m, group, member, dm } = await fileContext(userId, fileId);
   const mine = String(m.sender) === String(userId);
   const deny = async (status, code, message) => {
     await logFileAction(file._id, userId, 'denied', ip);
     throw new ApiError(status, code, message);
   };
+  if (dm) return issueDirectFileToken(userId, file, m, mine, deny, ip);
   if (file.revokedAt || m.status !== 'active') await deny(410, 'FILE_REVOKED', 'This file is no longer available');
+  // Trial over: own premium, or the group's premium when the creator allows it.
+  if (!mine) await requireGroupAccessPlan(userId, group);
   const p = m.permissions ?? {};
   if (!mine) {
     if (p.whoCanView === 'admins' && !isAdmin(member)) await deny(403, 'ADMINS_ONLY', 'Only group admins can view this file');
@@ -763,25 +781,85 @@ export async function issueFileToken(userId, fileId, ip) {
     kind: file.kind,
     size: file.size,
     visibility: m.visibility,
+    ...(await viewerInfo(m)),
     // Level 3 always carries the viewer watermark; level 2 when the group enables it.
     watermark: {
       name: displayNameOf(viewer),
       maskedId: maskedId(userId),
       enabled: m.visibility === 'highly_protected' || (m.visibility === 'private' && group.settings.security.dynamicWatermark),
     },
+    // Screenshots / screen recording blocked on the device (Android FLAG_SECURE).
+    screenshotProtection: m.visibility !== 'public' && group.settings.security.screenshotProtection !== false,
+  };
+}
+
+async function issueDirectFileToken(userId, file, m, mine, deny, ip) {
+  if (file.revokedAt || m.deletedForEveryone) await deny(410, 'FILE_REVOKED', 'This file is no longer available');
+  if (!mine) {
+    await requireOwnAccess(userId);
+    if (m.viewOnce) {
+      const r = await Message.updateOne({ _id: m._id, openedBy: { $ne: toObjectId(userId) } }, { $addToSet: { openedBy: toObjectId(userId) } });
+      if (!r.modifiedCount) await deny(410, 'ALREADY_OPENED', 'You already opened this view once file');
+    }
+  }
+  const { token, expiresIn } = signFileToken(userId, file._id);
+  await logFileAction(file._id, userId, 'token_issued', ip);
+  const viewer = await User.findById(userId).select('name displayName').lean();
+  return {
+    token,
+    expiresIn,
+    streamPath: `/api/v1/files/stream?token=${encodeURIComponent(token)}`,
+    name: file.name,
+    mimeType: file.mimeType,
+    kind: file.kind,
+    size: file.size,
+    visibility: m.visibility,
+    ...(await viewerInfo(m)),
+    watermark: { name: displayNameOf(viewer), maskedId: maskedId(userId), enabled: true },
+    screenshotProtection: true,
   };
 }
 
 export async function fileAccessLog(userId, fileId) {
-  const { file, m, member } = await fileContext(userId, fileId);
-  if (String(m.sender) !== String(userId) && !isAdmin(member)) throw ApiError.forbidden('Only the sender or admins can view the access log');
+  const { file, m, member, dm } = await fileContext(userId, fileId);
+  if (String(m.sender) !== String(userId) && (dm || !isAdmin(member))) throw ApiError.forbidden('Only the sender or admins can view the access log');
   const rows = await FileAccessLog.find({ file: file._id }).sort({ _id: -1 }).limit(200).lean();
   const users = await getPublicUsers(rows.map((r) => r.user));
   return rows.map((r) => ({ displayName: users.get(String(r.user))?.displayName ?? 'Member', action: r.action, at: r.createdAt }));
 }
 
 export async function fileInfo(userId, fileId) {
-  const { file, m, group, member } = await fileContext(userId, fileId);
+  const { file, m, group, member, dm } = await fileContext(userId, fileId);
+  if (dm) {
+    return {
+      fileId: String(file._id),
+      name: file.name,
+      size: file.size,
+      mimeType: file.mimeType,
+      kind: file.kind,
+      groupName: 'Direct chat',
+      visibility: m.visibility,
+      direct: true,
+      conversationId: String(m.conversation),
+      ...(await viewerInfo(m)),
+      permissions: {
+        allowDownload: false,
+        allowScreenshot: false,
+        allowShare: false,
+        allowPrint: false,
+        canForward: false,
+        canCopy: false,
+        watermark: true,
+        whoCanView: 'members',
+        viewOnce: Boolean(m.viewOnce),
+        expiresAt: null,
+        accessExpiresAt: null,
+      },
+      revoked: Boolean(file.revokedAt) || Boolean(m.deletedForEveryone),
+      canManage: String(m.sender) === String(userId),
+      message: null,
+    };
+  }
   const [dto] = await serialize([m], userId, String(m.group), member);
   return {
     fileId: String(file._id),
@@ -797,13 +875,15 @@ export async function fileInfo(userId, fileId) {
       watermark: m.visibility === 'highly_protected' || (m.visibility === 'private' && Boolean(group.settings.security.dynamicWatermark)),
     },
     revoked: Boolean(file.revokedAt),
+    ...(await viewerInfo(m)),
     canManage: String(m.sender) === String(userId) || isAdmin(member),
     message: dto,
   };
 }
 
 export async function updateFilePermissions(userId, fileId, patch) {
-  const { m, member } = await fileContext(userId, fileId);
+  const { m, member, dm } = await fileContext(userId, fileId);
+  if (dm) throw ApiError.badRequest('File permissions can be changed for group files only');
   if (String(m.sender) !== String(userId) && !isAdmin(member)) throw ApiError.forbidden('Only the sender or admins can change file permissions');
   const set = {};
   if (patch.whoCanView) set['permissions.whoCanView'] = patch.whoCanView;
