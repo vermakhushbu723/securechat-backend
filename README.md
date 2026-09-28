@@ -16,6 +16,7 @@ npm run test:e2e            # 45 realtime checks with the 2 users (server must b
 npm run test:groups         # 46 group checks with 5 users over real sockets
 npm run seed:groups         # demo groups with a real conversation (re-run replaces them)
 npm run test:auth           # 11 checks: mobile / email OTP, Personal / Business profile, search visibility
+npm run test:plans          # 9 checks: contact visibility, word search, 1-to-1 protected files, trial / premium / group premium
 ```
 
 Protected files need `SECURE_UPLOAD_DIR`, `FILE_ENCRYPTION_KEY` (64 hex chars) and `FILE_TOKEN_SECRET`;
@@ -40,6 +41,26 @@ APK on `/download/SecureChat-latest.apk`).
 | APK | `/var/www/securechat-downloads` |
 
 Update the API after pushing to `main`: `sudo /opt/securechat/deploy.sh`.
+
+## Plans (trial / premium)
+
+Every account gets a 7 day trial. After it ends the user can read but cannot send messages or open
+protected files (`402 SUBSCRIPTION_REQUIRED`) until they have premium or an admin-approved extension.
+In a premium group (creator has premium, or the admin approved the group) the creator can turn on
+"Members without premium can use this group" (`settings.members.freeAccess`).
+
+Admin tasks on the server (`cd /opt/securechat/app && sudo -u securechat npm run admin -- <command>`):
+
+| Command | What it does |
+|---|---|
+| `premium <user> <days>` | Premium for a user (id, mobile number, email or username; 0 days removes) |
+| `extend <user> <days>` | Admin approved extension |
+| `trial <user> <days>` | Trial ends in `<days>` (0 = now) |
+| `status <user>` | Current plan |
+| `group-premium <groupId or invite code> on/off [days]` | Approve a group as premium |
+| `requests` / `approve <id> [days]` / `reject <id>` | Extension / premium requests sent from the app |
+
+The same actions are available over HTTP at `/api/v1/admin/*` with the header `x-admin-key: <ADMIN_API_KEY>`.
 
 ## Features (1-to-1)
 
