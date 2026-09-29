@@ -26,6 +26,7 @@ const EDIT_WINDOW_MS = env.MESSAGE_EDIT_WINDOW_MIN * 60_000;
 const DELETE_WINDOW_MS = env.DELETE_FOR_EVERYONE_WINDOW_MIN * 60_000;
 const MAX_PINNED = 5;
 const FOREVER = new Date('9999-12-31T00:00:00Z');
+const EXPIRY_MS = { '1h': 3_600_000, '24h': 86_400_000, '7d': 7 * 86_400_000 };
 
 // ===========================================================================
 // Helpers
@@ -302,7 +303,7 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
   if (input.replyToId) {
     const r = await Message.findOne({ _id: input.replyToId, conversation: conversationId }).lean();
     if (!r || r.deletedForEveryone) throw ApiError.badRequest('Replied message not found');
-    replyTo = { id: r._id, sender: r.sender, type: r.type, text: previewText(r) };
+    replyTo = { id: r._id, sender: r.sender, type: r.type, text: r.viewOnce ? 'View once message' : previewText(r) };
   }
 
   const doc = {
@@ -317,7 +318,13 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
     contact: input.contact,
     replyTo,
     visibility,
-    viewOnce: visibility !== 'public' && Boolean(input.viewOnce),
+    viewOnce: input.expiry === 'view_once' || Boolean(input.viewOnce),
+    permissions: {
+      allowDownload: visibility === 'public' ? input.allowDownload !== false : false,
+      allowScreenshot: visibility === 'public' ? input.allowScreenshot !== false : false,
+      expiresAt: EXPIRY_MS[input.expiry] ? new Date(Date.now() + EXPIRY_MS[input.expiry]) : null,
+    },
+    silent: Boolean(input.silent),
     forwarded: Boolean(forwardedFrom),
     forwardCount: forwardedFrom ? forwardedFrom.forwardCount + 1 : 0,
   };
@@ -356,7 +363,7 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
   ]);
 
   emitMessage('message:new', msg, [senderId, peerId]);
-  notifyIfOffline(senderId, peerId, conversationId, msg).catch(() => {});
+  if (!msg.silent) notifyIfOffline(senderId, peerId, conversationId, msg).catch(() => {});
   return { message: toMessageDTO(msg, senderId), duplicate: false };
 }
 
@@ -637,6 +644,38 @@ export async function starMessage(userId, { messageId, starred }) {
   );
   emitMessage('message:updated', updated, [userId]); // starring is private
   return toMessageDTO(updated, userId);
+}
+
+/** View once (text / public media): reveals the content to the receiver one time. */
+export async function openViewOnce(userId, messageId) {
+  const m = await loadMessageForUser(messageId, userId);
+  if (!m.viewOnce) throw ApiError.badRequest('Not a view once message');
+  if (m.deletedForEveryone || m.expired) throw new ApiError(410, 'MESSAGE_GONE', 'This message is no longer available');
+  if (String(m.sender) !== String(userId)) {
+    if (m.media?.secureFileId) throw ApiError.badRequest('Open the file in the secure viewer');
+    await requireOwnAccess(userId);
+    const r = await Message.updateOne({ _id: m._id, openedBy: { $ne: toObjectId(userId) } }, { $addToSet: { openedBy: toObjectId(userId) } });
+    if (!r.modifiedCount) throw new ApiError(410, 'ALREADY_OPENED', 'You already opened this view once message');
+    emitMessage('message:updated', { ...m, openedBy: [...(m.openedBy ?? []), toObjectId(userId)] }, [m.sender]);
+  }
+  return toMessageDTO(m, userId, { revealed: true });
+}
+
+/** Expiry sweeper (1h / 24h / 7d): wipes the content and revokes protected files. */
+export async function expireDirectMessages() {
+  const due = await Message.find({ expired: false, deletedForEveryone: false, 'permissions.expiresAt': { $ne: null, $lte: new Date() } })
+    .select('_id')
+    .limit(500)
+    .lean();
+  if (!due.length) return 0;
+  const ids = due.map((d) => d._id);
+  await Message.updateMany({ _id: { $in: ids } }, { $set: { expired: true, text: '', reactions: [] }, $unset: { media: 1, location: 1, contact: 1, replyTo: 1 } });
+  await SecureFile.updateMany({ dmMessage: { $in: ids }, revokedAt: null }, { $set: { revokedAt: new Date() } });
+  for (const m of await Message.find({ _id: { $in: ids } }).lean()) {
+    await Conversation.updateOne({ _id: m.conversation, 'lastMessage.id': m._id }, { $set: { 'lastMessage.text': 'Message expired' } });
+    emitMessage('message:updated', m, [m.sender, m.recipient]);
+  }
+  return ids.length;
 }
 
 export async function forwardMessage(userId, { messageId, toUserIds, clientMsgId }) {

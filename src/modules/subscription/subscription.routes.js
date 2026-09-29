@@ -22,6 +22,8 @@ export const subscriptionRouter = Router();
 
 subscriptionRouter.get('/', async (req, res) => ok(res, await sub.status(req.user.id)));
 
+subscriptionRouter.post('/claim-trial', async (req, res) => ok(res, await sub.claimTrial(req.user.id)));
+
 subscriptionRouter.post(
   '/requests',
   validate({

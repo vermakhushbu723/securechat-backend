@@ -38,6 +38,12 @@ const schema = z.object({
   DELETE_FOR_EVERYONE_WINDOW_MIN: z.coerce.number().positive().default(60),
 
   OTP_DEV_MODE: bool('false'),
+  // SMTP for OTP emails (login: mobile number -> email -> code). Empty host = not sent.
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_FROM: z.string().default(''),
   // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
   ADMIN_API_KEY: z.string().default(''),
   RUN_WORKERS: bool('true'),

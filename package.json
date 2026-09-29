@@ -17,6 +17,7 @@
     "seed:groups": "node scripts/seed-demo-groups.js",
     "test:auth": "node scripts/e2e-auth-test.js",
     "test:plans": "node scripts/e2e-plans-test.js",
+    "test:dm-privacy": "node scripts/e2e-dm-privacy-test.js",
     "admin": "node scripts/admin.js"
   },
   "author": "",
@@ -35,6 +36,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.2",
     "multer": "^2.4.0",
+    "nodemailer": "^10.0.12",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "rate-limiter-flexible": "^11.2.1",

@@ -54,7 +54,9 @@ const userSchema = new Schema(
       premiumUntil: { type: Date, default: null },
       extendedUntil: { type: Date, default: null },
       graceAt: { type: Date, default: null }, // one time grace given when plans were introduced
-      trialEndsAt: { type: Date, default: null }, // admin override of the 7 day trial
+      trialEndsAt: { type: Date, default: null }, // admin override / claimed trial end
+      // New accounts: the 7 day trial starts only when the user taps "Claim free trial".
+      trialPending: { type: Boolean, default: false },
     },
     // Content policy violations ("Warning 1 of 5").
     warnings: { type: Number, default: 0 },

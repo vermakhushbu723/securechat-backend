@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 
 import { env } from '../../config/env.js';
 import { redis } from '../../db/redis.js';
+import { sendOtpEmail } from '../../services/mail.service.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../utils/jwt.js';
 import { toSelfUser, User } from '../users/user.model.js';
@@ -70,6 +71,7 @@ export async function register({ name, username, phone, email, password }) {
     phone,
     email,
     passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+    subscription: { trialPending: true },
   });
   return { user: toSelfUser(user), ...(await issueTokens(user._id)) };
 }
@@ -95,15 +97,46 @@ const OTP_MAX_ATTEMPTS = 5;
 const otpKey = (value) => `otp:${value}`;
 const hash = (v) => createHash('sha256').update(v).digest();
 
-export async function requestOtp({ kind, value }) {
+/** j***a@gmail.com */
+function maskEmail(email) {
+  const [name, domain] = email.split('@');
+  return `${name[0]}${'*'.repeat(Math.max(1, name.length - 2))}${name.length > 1 ? name.at(-1) : ''}@${domain}`;
+}
+
+/** Mobile number + email must belong to the same account (or both be new). */
+async function checkPair(phone, email) {
+  const [byPhone, byEmail] = await Promise.all([
+    User.findOne({ phone }).select('email').lean(),
+    User.findOne({ email }).select('phone').lean(),
+  ]);
+  if (byPhone?.email && byPhone.email !== email) {
+    throw ApiError.conflict(`This mobile number is linked to ${maskEmail(byPhone.email)}. Enter that email ID.`, 'EMAIL_MISMATCH');
+  }
+  if (byEmail && String(byEmail._id) !== String(byPhone?._id)) {
+    throw ApiError.conflict('This email ID is linked to another mobile number.', 'EMAIL_IN_USE');
+  }
+  return byPhone;
+}
+
+export async function requestOtp(target) {
+  const { kind, value } = target;
+  if (kind === 'pair') await checkPair(target.phone, target.email);
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await redis.set(otpKey(value), JSON.stringify({ h: hash(code).toString('hex'), a: 0 }), 'EX', OTP_TTL);
-  // Plug an SMS (phone) / email provider here. In dev mode the code is returned to the client.
-  return { kind, sentTo: value, expiresIn: OTP_TTL, ...(env.OTP_DEV_MODE ? { devCode: code } : {}) };
+  // Mobile + email login: the code goes to the email. (Plug an SMS provider here for phone-only login.)
+  const emailTo = kind === 'pair' ? target.email : kind === 'email' ? value : null;
+  const emailed = emailTo ? await sendOtpEmail(emailTo, code) : false;
+  return {
+    kind: kind === 'pair' ? 'email' : kind,
+    sentTo: emailTo ?? value,
+    emailed,
+    expiresIn: OTP_TTL,
+    ...(env.OTP_DEV_MODE ? { devCode: code } : {}),
+  };
 }
 
 /** Existing account -> login. New account -> created with profileCompleted=false (Personal / Business step next). */
-export async function verifyOtp({ kind, value, code, name }) {
+export async function verifyOtp({ kind, value, code, name, phone, email }) {
   const raw = await redis.get(otpKey(value));
   if (!raw) throw ApiError.badRequest('Code expired, request a new one');
   const state = JSON.parse(raw);
@@ -119,11 +152,23 @@ export async function verifyOtp({ kind, value, code, name }) {
   }
   await redis.del(otpKey(value));
 
-  let user = await User.findOne({ [kind]: value }).lean();
-  const isNew = !user;
-  if (isNew) {
-    const fallback = kind === 'phone' ? `User ${value.slice(-4)}` : value.split('@')[0].slice(0, 60);
-    user = (await User.create({ [kind]: value, name: name ?? fallback, profileCompleted: false })).toObject();
+  let user;
+  let isNew = false;
+  if (kind === 'pair') {
+    user = await checkPair(phone, email);
+    if (user && !user.email) await User.updateOne({ _id: user._id }, { $set: { email } });
+    user = user ? await User.findById(user._id).lean() : null;
+    if (!user) {
+      isNew = true;
+      user = (await User.create({ phone, email, name: name ?? `User ${phone.slice(-4)}`, profileCompleted: false, subscription: { trialPending: true } })).toObject();
+    }
+  } else {
+    user = await User.findOne({ [kind]: value }).lean();
+    isNew = !user;
+    if (isNew) {
+      const fallback = kind === 'phone' ? `User ${value.slice(-4)}` : value.split('@')[0].slice(0, 60);
+      user = (await User.create({ [kind]: value, name: name ?? fallback, profileCompleted: false, subscription: { trialPending: true } })).toObject();
+    }
   }
   if (user.status !== 'active') throw ApiError.forbidden('Account is blocked', 'ACCOUNT_BLOCKED');
   const self = toSelfUser(user);

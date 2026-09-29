@@ -2,7 +2,7 @@ import { redis } from '../../db/redis.js';
 import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { toSelfUser, User } from '../users/user.model.js';
-import { accessOf } from './access.js';
+import { accessOf, TRIAL_DAYS } from './access.js';
 import { ExtensionRequest } from './extensionRequest.model.js';
 
 export { accessOf, TRIAL_DAYS } from './access.js';
@@ -39,13 +39,30 @@ export async function groupPremiumInfo(group) {
   return { active: Boolean(source), source, freeAccess: Boolean(group.settings?.members?.freeAccess) };
 }
 
-const locked = (message) => new ApiError(402, 'SUBSCRIPTION_REQUIRED', message, { upgrade: true });
+const locked = (message, details = {}) => new ApiError(402, 'SUBSCRIPTION_REQUIRED', message, { upgrade: true, ...details });
+
+const CLAIM_MESSAGE = 'Claim your 7 day free trial to start chatting.';
 
 /** Direct chats: the user needs their own trial / premium / extension. */
 export async function requireOwnAccess(userId) {
   const a = await getAccess(userId);
+  if (a.access === 'unclaimed') throw locked(CLAIM_MESSAGE, { claimTrial: true });
   if (!a.active) throw locked('Your free trial has ended. Upgrade to premium or request an extension to keep chatting.');
   return a;
+}
+
+/** "Claim free trial" popup after signup: the 7 days start now. */
+export async function claimTrial(userId) {
+  const until = new Date(Date.now() + TRIAL_DAYS * DAY);
+  const updated = await User.findOneAndUpdate(
+    { _id: userId, 'subscription.trialPending': true },
+    { $set: { 'subscription.trialPending': false, 'subscription.trialEndsAt': until } },
+    { returnDocument: 'after', lean: true },
+  );
+  if (!updated) throw ApiError.conflict('Your free trial was already claimed', 'TRIAL_ALREADY_CLAIMED');
+  await invalidateAccess(userId);
+  emitToUser(String(userId), 'user:updated', toSelfUser(updated));
+  return accessOf(updated);
 }
 
 /**
@@ -56,12 +73,13 @@ export async function groupAccessBlock(userId, group) {
   const a = await getAccess(userId);
   if (a.active) return null;
   if (group.settings?.members?.freeAccess && (await groupPremiumSource(group))) return null;
+  if (a.access === 'unclaimed') return ['SUBSCRIPTION_REQUIRED', CLAIM_MESSAGE];
   return ['SUBSCRIPTION_REQUIRED', 'Your free trial has ended. Upgrade to premium to reply and open protected files in this group.'];
 }
 
 export async function requireGroupAccessPlan(userId, group) {
   const block = await groupAccessBlock(userId, group);
-  if (block) throw locked(block[1]);
+  if (block) throw locked(block[1], block[1] === CLAIM_MESSAGE ? { claimTrial: true } : {});
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +123,7 @@ async function extendField(userId, field, days) {
 export async function setTrial(userId, days) {
   const updated = await User.findByIdAndUpdate(
     userId,
-    { $set: { 'subscription.trialEndsAt': new Date(Date.now() + days * DAY) } },
+    { $set: { 'subscription.trialEndsAt': new Date(Date.now() + days * DAY), 'subscription.trialPending': false } },
     { returnDocument: 'after', lean: true },
   );
   if (!updated) throw ApiError.notFound('User not found');

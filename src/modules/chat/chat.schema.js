@@ -44,6 +44,11 @@ export const sendMessageInput = z
     media: z.union([mediaInput, secureMediaInput]).optional(),
     visibility: z.enum(['public', 'private', 'highly_protected']).default('public'),
     viewOnce: z.boolean().optional(),
+    // Privacy sheet options (same as group messages).
+    expiry: z.enum(['view_once', '1h', '24h', '7d', 'never']).default('never'),
+    allowDownload: z.boolean().optional(),
+    allowScreenshot: z.boolean().optional(),
+    silent: z.boolean().default(false),
     location: z
       .strictObject({
         lat: z.number().min(-90).max(90),

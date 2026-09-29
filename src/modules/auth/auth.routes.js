@@ -25,31 +25,53 @@ const schemas = {
     })
     .refine((b) => b.username || b.phone || b.email, { message: 'Provide username, phone or email' }),
   login: z.strictObject({ identifier: z.string().trim().min(3).max(100), password: z.string().min(1).max(128) }),
-  // One field: mobile number or email ID (`phone` kept for older app builds).
+  // Login: mobile number + email ID -> code sent to the email (`identifier` alone = one field login,
+  // `phone` alone kept for older app builds).
   otpRequest: z
-    .strictObject({ identifier: z.string().trim().min(3).max(100).optional(), phone: phone.optional() })
-    .refine((b) => b.identifier || b.phone, { message: 'Enter mobile number or email ID' })
-    .transform((b, ctx) => {
-      const id = normalizeIdentifier(b.identifier ?? b.phone);
-      if (!id) ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
-      return id ?? z.NEVER;
-    }),
+    .strictObject({
+      identifier: z.string().trim().min(3).max(100).optional(),
+      phone: z.string().trim().min(3).max(20).optional(),
+      email: z.string().trim().min(3).max(100).optional(),
+    })
+    .refine((b) => b.identifier || b.phone, { message: 'Enter your mobile number' })
+    .transform((b, ctx) => toTarget(b, ctx)),
   otpVerify: z
     .strictObject({
       identifier: z.string().trim().min(3).max(100).optional(),
-      phone: phone.optional(),
+      phone: z.string().trim().min(3).max(20).optional(),
+      email: z.string().trim().min(3).max(100).optional(),
       code: z.string().regex(/^\d{6}$/),
       name: z.string().trim().min(1).max(60).optional(),
     })
-    .refine((b) => b.identifier || b.phone, { message: 'Enter mobile number or email ID' })
+    .refine((b) => b.identifier || b.phone, { message: 'Enter your mobile number' })
     .transform((b, ctx) => {
-      const id = normalizeIdentifier(b.identifier ?? b.phone);
-      if (!id) ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
-      return id ? { ...id, code: b.code, name: b.name } : z.NEVER;
+      const t = toTarget(b, ctx);
+      return t === z.NEVER ? t : { ...t, code: b.code, name: b.name };
     }),
   refresh: z.strictObject({ refreshToken: z.string().min(10) }),
   logout: z.strictObject({ refreshToken: z.string().min(10), all: z.boolean().optional() }),
 };
+
+/**
+ * `{ kind, value }` for one field login, or `{ kind: 'pair', phone, email, value }` when both the
+ * mobile number and the email ID are given (the code goes to the email).
+ */
+function toTarget(b, ctx) {
+  if (b.phone && b.email) {
+    const p = normalizeIdentifier(b.phone);
+    const e = normalizeIdentifier(b.email);
+    if (p?.kind !== 'phone') ctx.addIssue({ code: 'custom', path: ['phone'], message: 'Enter a valid mobile number' });
+    if (e?.kind !== 'email') ctx.addIssue({ code: 'custom', path: ['email'], message: 'Enter a valid email ID' });
+    if (p?.kind !== 'phone' || e?.kind !== 'email') return z.NEVER;
+    return { kind: 'pair', phone: p.value, email: e.value, value: `${p.value}|${e.value}` };
+  }
+  const id = normalizeIdentifier(b.identifier ?? b.phone ?? b.email);
+  if (!id) {
+    ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
+    return z.NEVER;
+  }
+  return id;
+}
 
 const router = Router();
 const ipLimit = rateLimit(limiters.auth, (req) => req.ip);

@@ -21,6 +21,7 @@ export function accessOf(u, now = Date.now()) {
   let until = null;
   if (premiumUntil && premiumUntil.getTime() > now) [access, until] = ['premium', premiumUntil];
   else if (extendedUntil && extendedUntil.getTime() > now) [access, until] = ['extended', extendedUntil];
+  else if (s.trialPending) access = 'unclaimed'; // new account: trial not claimed yet
   else if (trialEndsAt.getTime() > now) [access, until] = ['trial', trialEndsAt];
   return {
     access,
@@ -29,7 +30,8 @@ export function accessOf(u, now = Date.now()) {
     until,
     daysLeft: until ? Math.max(0, Math.ceil((until.getTime() - now) / DAY)) : 0,
     trialDays: TRIAL_DAYS,
-    trialEndsAt,
+    trialEndsAt: s.trialPending ? null : trialEndsAt,
+    canClaimTrial: Boolean(s.trialPending),
     premiumUntil,
     extendedUntil,
   };

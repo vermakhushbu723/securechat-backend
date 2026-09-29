@@ -23,6 +23,7 @@ import {
   requireGroupAccess,
   sendBlockReason,
 } from './group.access.js';
+import { User } from '../users/user.model.js';
 import { Group, GroupMember, InviteLink, inviteState } from './group.model.js';
 import { expiryDate } from './group.schema.js';
 import { GroupMessage } from './groupMessage.model.js';
@@ -575,9 +576,68 @@ export async function invitePreview(code, viewerId = null) {
       locationShareMode: g.settings.location.shareMode,
       locationVisibility: g.settings.location.visibility,
       messageMode: g.settings.messages.messageMode,
+      rules: g.rules ?? '',
     },
+    // Everything the member agrees to before joining (join popup).
+    permissions: joinPermissions(g, link),
     membership: membership?.status ?? null,
   };
+}
+
+const RULE_LABELS = {
+  abuse: 'Abusive words',
+  numbers: 'Phone numbers',
+  numberWords: 'Numbers written in words',
+  spam: 'Spam',
+  links: 'Links',
+  personalInfo: 'Personal information',
+  externalContact: 'Outside contact IDs (WhatsApp / Telegram)',
+};
+
+/** Human readable list of the group's rules and permissions for the join popup. */
+function joinPermissions(g, link) {
+  const s = g.settings;
+  const out = [];
+  const loc = s.location;
+  if (loc.requirement !== 'off') {
+    const who = loc.visibility === 'groupMembers' ? 'the admin and members' : loc.visibility === 'adminOnly' ? 'the group admin' : 'nobody';
+    out.push({
+      key: 'location',
+      title: loc.requirement === 'mandatory' ? 'Location sharing is required' : 'Location sharing is requested',
+      detail: `Your location turns on when you join (${loc.shareMode === 'live' ? `live, every ${loc.liveIntervalMin || 10} min` : 'shared once'}) and is visible to ${who}.`,
+    });
+  }
+  const mode = s.messages.messageMode;
+  out.push({
+    key: 'messages',
+    title: s.messages.whoCanSend === 'admins' || s.members.muteGroup ? 'Only admins can send messages' : 'Everyone can send messages',
+    detail:
+      mode === 'private'
+        ? 'All messages are Private: no forwarding, copying, downloading or screenshots.'
+        : mode === 'public'
+          ? 'All messages are Public.'
+          : 'Each sender chooses Public, Private or Highly Protected.',
+  });
+  const sec = s.security;
+  const protections = [
+    sec.screenshotProtection && 'screenshots',
+    sec.downloadDisabled && 'downloads',
+    sec.externalShareDisabled && 'sharing outside the app',
+    sec.copyDisabledProtected && 'copying',
+  ].filter(Boolean);
+  if (protections.length) {
+    out.push({
+      key: 'protection',
+      title: 'Protected content stays in the app',
+      detail: `On protected messages: no ${protections.join(', ')}.${sec.dynamicWatermark ? ' Your name is watermarked on protected files.' : ''}`,
+    });
+  }
+  const rules = (s.contentRules ?? []).map((r) => RULE_LABELS[r]).filter(Boolean);
+  if (rules.length) out.push({ key: 'content', title: 'Blocked in messages', detail: `${rules.join(', ')}. Repeated violations lead to warnings.` });
+  if (link.requireApproval || s.members.approveNewMembers) out.push({ key: 'approval', title: 'Admin approval', detail: 'An admin approves your request before you can chat.' });
+  if (s.members.restrictNewMembers) out.push({ key: 'restricted', title: 'Read only for 24 hours', detail: 'New members can send messages one day after joining.' });
+  out.push({ key: 'privacy', title: 'Your number stays hidden', detail: 'Members see only your display name and photo.' });
+  return out;
 }
 
 export async function joinByInvite(userId, code, { location, shareMode }) {
@@ -621,6 +681,8 @@ export async function joinByInvite(userId, code, { location, shareMode }) {
     ? { ...location, mode: shareMode ?? g.settings.location.shareMode ?? 'join', updatedAt: now }
     : null;
   if (location) {
+    // Accepting a location group turns location sharing on for this user.
+    await User.updateOne({ _id: userId, 'locationSettings.mode': 'none' }, { $set: { 'locationSettings.mode': memberLocation.mode === 'live' ? 'live' : 'join' } });
     await LocationHistory.create({ user: userId, lat: location.lat, lng: location.lng, place: location.place, accuracy: location.accuracy, source: 'join', group: groupId });
   }
 

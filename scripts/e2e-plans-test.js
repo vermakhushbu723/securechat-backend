@@ -154,7 +154,15 @@ let group;
 let groupFile;
 await step('trial active for new accounts; after it ends direct messages need premium', async () => {
   free = await otpUser(`free${stamp}@example.org`, { accountType: 'personal', name: `Free ${stamp}` });
-  eq(free.user.subscription.access, 'trial', 'new account starts on trial');
+  eq(free.user.subscription.access, 'unclaimed', 'new account waits for "Claim free trial"');
+  const s0 = await connectSocket(free.accessToken);
+  const e0 = await emit(s0, 'message:send', { toUserId: A.user.id, clientMsgId: clientId(), type: 'text', text: 'hi' }).catch((e) => e);
+  s0.close();
+  eq(e0.code, 'SUBSCRIPTION_REQUIRED', 'cannot chat before claiming');
+  eq(e0.details?.claimTrial, true, 'error asks to claim the trial');
+  const claimed = await api('POST', '/subscription/claim-trial', { token: free.accessToken });
+  eq(claimed.access, 'trial', 'trial after claim');
+  await fails(api('POST', '/subscription/claim-trial', { token: free.accessToken }), 'TRIAL_ALREADY_CLAIMED', 'second claim');
   const st = await api('GET', '/subscription', { token: free.accessToken });
   eq(st.daysLeft, 7, '7 days');
   await admin('/users/access', { user: free.user.id, kind: 'trial', days: 0 });

@@ -68,6 +68,14 @@ const messageSchema = new Schema(
     visibility: { type: String, enum: ['public', 'private', 'highly_protected'], default: 'public' },
     viewOnce: { type: Boolean, default: false },
     openedBy: { type: [Schema.Types.ObjectId], default: [] },
+    // Same options as group messages (Privacy sheet): public download / screenshot, expiry, silent.
+    permissions: {
+      allowDownload: { type: Boolean, default: true },
+      allowScreenshot: { type: Boolean, default: true },
+      expiresAt: { type: Date, default: null },
+    },
+    expired: { type: Boolean, default: false },
+    silent: { type: Boolean, default: false },
     forwarded: { type: Boolean, default: false },
     forwardCount: { type: Number, default: 0 },
     reactions: { type: [reactionSchema], default: [] },
@@ -88,12 +96,15 @@ messageSchema.index({ conversation: 1, recipient: 1, readAt: 1 });
 messageSchema.index({ conversation: 1, recipient: 1, _id: 1 });
 messageSchema.index({ conversation: 1, type: 1, _id: -1 });
 messageSchema.index({ starredBy: 1, _id: -1 });
+messageSchema.index({ 'permissions.expiresAt': 1 }, { partialFilterExpression: { 'permissions.expiresAt': { $type: 'date' } } });
 messageSchema.index({ conversation: 1, text: 'text' }, { default_language: 'none' });
 
 export const Message = mongoose.model('Message', messageSchema);
 
 export function previewText(m) {
   if (m.deletedForEveryone) return 'This message was deleted';
+  if (m.expired) return 'Message expired';
+  if (m.viewOnce && !m.media?.secureFileId) return '👁 View once message';
   if (m.media?.secureFileId) return m.type === 'image' ? '🔒 Protected photo' : m.type === 'video' ? '🔒 Protected video' : '🔒 Protected file';
   switch (m.type) {
     case 'text':
@@ -136,9 +147,16 @@ function secureMediaDTO(media) {
 }
 
 /** Serializes a message for one viewer (starred flag and status are viewer specific). */
-export function toMessageDTO(m, viewerId) {
+export function toMessageDTO(m, viewerId, { revealed = false } = {}) {
   const viewer = String(viewerId);
-  const deleted = m.deletedForEveryone;
+  const mine = String(m.sender) === viewer;
+  const openedByViewer = (m.openedBy ?? []).some((u) => String(u) === viewer);
+  // View once: the receiver sees a "tap to open" placeholder until it is opened (once).
+  // (Protected files keep their placeholder: the secure viewer token itself enforces "once".)
+  const withheld = Boolean(m.viewOnce) && !mine && !revealed && !m.deletedForEveryone && !m.expired && !m.media?.secureFileId;
+  const deleted = m.deletedForEveryone || m.expired || withheld;
+  const perms = m.permissions ?? {};
+  const isPublic = (m.visibility ?? 'public') === 'public';
   return {
     id: String(m._id),
     conversationId: String(m.conversation),
@@ -150,11 +168,18 @@ export function toMessageDTO(m, viewerId) {
     media: secureMediaDTO(deleted ? null : m.media),
     visibility: m.visibility ?? 'public',
     viewOnce: Boolean(m.viewOnce),
-    // Private / Highly Protected: no forward, copy or download.
+    opened: Boolean(m.viewOnce) && (mine || openedByViewer),
+    withheld,
+    withheldReason: withheld ? (openedByViewer ? 'opened' : 'view_once') : null,
+    expired: Boolean(m.expired),
+    silent: Boolean(m.silent),
+    // Private / Highly Protected: no forward, copy, download or screenshot. Public: sender's choice.
     permissions: {
-      canForward: (m.visibility ?? 'public') === 'public' && !m.viewOnce,
-      canCopy: (m.visibility ?? 'public') === 'public',
-      allowDownload: (m.visibility ?? 'public') === 'public',
+      canForward: isPublic && !m.viewOnce,
+      canCopy: isPublic && !m.viewOnce,
+      allowDownload: isPublic && perms.allowDownload !== false && !m.viewOnce,
+      allowScreenshot: isPublic && perms.allowScreenshot !== false,
+      expiresAt: perms.expiresAt ?? null,
     },
     location: deleted ? null : (m.location ?? null),
     contact: deleted ? null : m.contact ? { ...m.contact, userId: m.contact.userId ? String(m.contact.userId) : null } : null,
@@ -167,7 +192,7 @@ export function toMessageDTO(m, viewerId) {
     reactions: deleted ? [] : (m.reactions ?? []).map((r) => ({ userId: String(r.user), emoji: r.emoji })),
     edited: Boolean(m.editedAt),
     editedAt: m.editedAt,
-    deleted,
+    deleted: Boolean(m.deletedForEveryone),
     starred: (m.starredBy ?? []).some((u) => String(u) === viewer),
     status: m.readAt ? 'read' : m.deliveredAt ? 'delivered' : 'sent',
     deliveredAt: m.deliveredAt,

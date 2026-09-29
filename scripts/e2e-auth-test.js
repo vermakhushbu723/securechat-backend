@@ -33,6 +33,7 @@ const email = `biz_${stamp}@example.org`;
 const mobile = `9${String(Date.now()).slice(-9)}`; // 10 digit Indian number
 let biz; // business account (email)
 let person; // personal account (mobile)
+let pairSession; // mobile + email account
 
 await step('invalid identifier is rejected', async () => {
   const err = await api('POST', '/auth/otp/request', { body: { identifier: 'hello' } }).catch((e) => e);
@@ -123,6 +124,41 @@ await step('Settings: group user location off / on', async () => {
   eq(me.locationSettings.mode, 'none', 'profile shows off');
   const on = await api('PUT', '/location/settings', { token: person.accessToken, body: { mode: 'join', intervalMin: 10 } });
   eq(on.settings.mode, 'join', 'on');
+});
+
+await step('mobile number + email: code goes to the email, same account next time', async () => {
+  const mob = `7${String(Date.now()).slice(-9)}`;
+  const mail = `pair${stamp}@example.org`;
+  const req = await api('POST', '/auth/otp/request', { body: { phone: mob, email: mail } });
+  eq(req.kind, 'email', 'code sent to email');
+  eq(req.sentTo, mail, 'sent to the email');
+  const res = await api('POST', '/auth/otp/verify', { body: { phone: mob, email: mail, code: req.devCode } });
+  eq(res.isNew, true, 'new account');
+  eq(res.user.phone, `+91${mob}`, 'mobile stored');
+  eq(res.user.email, mail, 'email stored');
+  eq(res.user.subscription.access, 'unclaimed', 'trial waits for the claim popup');
+  const again = await api('POST', '/auth/otp/request', { body: { phone: mob, email: mail } });
+  const res2 = await api('POST', '/auth/otp/verify', { body: { phone: mob, email: mail, code: again.devCode } });
+  eq(res2.isNew, false, 'login next time');
+  eq(res2.user.id, res.user.id, 'same user');
+  await api('PATCH', '/users/me', { token: res.accessToken, body: { privacy: { searchable: false } } });
+  pairSession = res;
+});
+
+await step('mobile number + wrong email is refused with a masked hint', async () => {
+  const err = await api('POST', '/auth/otp/request', { body: { phone: pairSession.user.phone, email: `other${stamp}@example.org` } }).catch((e) => e);
+  eq(err.code, 'EMAIL_MISMATCH', 'mismatch');
+  assert(/\*/.test(err.message), `masked email in message: ${err.message}`);
+  const taken = await api('POST', '/auth/otp/request', { body: { phone: `6${String(Date.now()).slice(-9)}`, email: pairSession.user.email } }).catch((e) => e);
+  eq(taken.code, 'EMAIL_IN_USE', 'email of another number');
+});
+
+await step('claim free trial: 7 days start now, only once', async () => {
+  const a = await api('POST', '/subscription/claim-trial', { token: pairSession.accessToken });
+  eq(a.access, 'trial', 'trial');
+  eq(a.daysLeft, 7, '7 days');
+  const err = await api('POST', '/subscription/claim-trial', { token: pairSession.accessToken }).catch((e) => e);
+  eq(err.code, 'TRIAL_ALREADY_CLAIMED', 'only once');
 });
 
 await step('password login still works for existing users', async () => {

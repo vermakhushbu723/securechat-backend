@@ -115,6 +115,10 @@ messageRouter.post(
   },
 );
 
+messageRouter.post('/:id/open', validate({ params: s.idParam }), async (req, res) => {
+  ok(res, await chat.openViewOnce(req.user.id, req.valid.params.id));
+});
+
 messageRouter.post(
   '/:id/star',
   validate({ params: s.idParam, body: z.strictObject({ starred: z.boolean() }) }),

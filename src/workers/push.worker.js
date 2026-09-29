@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 import { logger } from '../config/logger.js';
 import { createRedis } from '../db/redis.js';
 import { GroupMember } from '../modules/groups/group.model.js';
+import { expireDirectMessages } from '../modules/chat/chat.service.js';
 import { expireMessages } from '../modules/groups/groupMessage.service.js';
 import { User } from '../modules/users/user.model.js';
 import { onlineMap } from '../services/presence.service.js';
@@ -61,6 +62,9 @@ export function startPushWorker() {
     expireMessages()
       .then((n) => n && logger.info({ expired: n }, 'Expired group messages'))
       .catch((err) => logger.warn({ err: err.message }, 'Expiry sweep failed'));
+    expireDirectMessages()
+      .then((n) => n && logger.info({ expired: n }, 'Expired direct messages'))
+      .catch((err) => logger.warn({ err: err.message }, 'Direct expiry sweep failed'));
   }, 60_000);
   sweeper.unref();
   const close = worker.close.bind(worker);
