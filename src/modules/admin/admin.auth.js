@@ -55,19 +55,22 @@ export async function login({ email, password }, ip) {
     return { twoFactor: false, ...(await session(staff)) };
   }
   const challengeId = randomUUID();
-  const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  const code = env.ADMIN_FIXED_OTP || String(randomInt(0, 1_000_000)).padStart(6, '0');
   await redis.set(challengeKey(challengeId), JSON.stringify({ s: String(staff._id), h: hash(code), a: 0 }), 'EX', CODE_TTL);
-  const emailed = await sendOtpEmail(staff.email, code).catch((err) => {
-    logger.warn({ err: err.message }, 'Admin 2-step email failed');
-    return false;
-  });
+  const emailed = env.ADMIN_FIXED_OTP
+    ? false
+    : await sendOtpEmail(staff.email, code).catch((err) => {
+        logger.warn({ err: err.message }, 'Admin 2-step email failed');
+        return false;
+      });
   return {
     twoFactor: true,
     challengeId,
     sentTo: staff.email.replace(/^(.).*(@.*)$/, '$1***$2'),
     emailed,
     expiresIn: CODE_TTL,
-    ...(env.OTP_DEV_MODE ? { devCode: code } : {}),
+    ...(env.OTP_DEV_MODE && !env.ADMIN_FIXED_OTP ? { devCode: code } : {}),
+    fixedCode: Boolean(env.ADMIN_FIXED_OTP),
   };
 }
 
