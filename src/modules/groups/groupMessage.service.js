@@ -10,13 +10,14 @@ import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { checkContent } from '../../utils/contentFilter.js';
 import { escapeRegex, toObjectId } from '../../utils/validators.js';
-import { audit } from '../audit/audit.service.js';
+import { audit, AuditLog } from '../audit/audit.service.js';
 import { logFileAction, revokeFilesOfMessages, signFileToken } from '../files/file.service.js';
 import { FileAccessLog, SecureFile } from '../files/secureFile.model.js';
 import { getContentSettings } from '../platform/platform.service.js';
 import { loadDirectMessageForUser } from '../chat/chat.service.js';
 import { Message } from '../chat/message.model.js';
-import { requireGroupAccessPlan, requireOwnAccess } from '../subscription/subscription.service.js';
+import { assertUserSecurity, requireGroupAccessPlan, requireOwnAccess } from '../subscription/subscription.service.js';
+import { applyContentPenalty } from '../users/moderation.service.js';
 import { displayNameOf, User } from '../users/user.model.js';
 import {
   effectiveVisibility,
@@ -160,11 +161,24 @@ export async function postSystemMessage(groupId, actorId, event, text, targetId 
 async function enforceContent(userId, groupId, group, text) {
   if (!text?.trim()) return;
   const cs = await getContentSettings();
-  const enabled = [...new Set([...(group.settings.contentRules ?? []), ...cs.globalRules])];
-  const rule = checkContent(text, { enabled, abuseWords: cs.abuseWords });
+  let enabled = [...new Set([...(group.settings.contentRules ?? []), ...cs.globalRules])];
+  if (cs.abuseEnabled === false) enabled = enabled.filter((r) => r !== 'abuse');
+  const rule = checkContent(text, {
+    enabled,
+    abuseWords: cs.abuseWords,
+    hinglish: cs.hinglish,
+    misspellings: cs.misspellings,
+    sensitivity: cs.sensitivity,
+    hindiNumbers: cs.hindiNumbers,
+    normalization: cs.normalization !== false,
+  });
   if (!rule) return;
   const u = await User.findByIdAndUpdate(userId, { $inc: { warnings: 1 } }, { returnDocument: 'after', lean: true, projection: { warnings: 1 } });
+  // Penalty windows count the earlier blocks + this one (the audit write below is async).
+  const since = (ms) => ({ actor: toObjectId(userId), action: 'content_blocked', _id: { $gte: pointerAt(new Date(Date.now() - ms)) } });
+  const [day, week] = await Promise.all([AuditLog.countDocuments(since(86_400_000)), AuditLog.countDocuments(since(7 * 86_400_000))]);
   audit(userId, 'content_blocked', { group: groupId, meta: { rule, text: text.slice(0, 200) } });
+  await applyContentPenalty(userId, { day: day + 1, week: week + 1 }, cs);
   throw new ApiError(422, 'CONTENT_BLOCKED', 'This message cannot be sent because it contains restricted content.', {
     rule,
     warnings: u?.warnings ?? 1,
@@ -180,6 +194,7 @@ export async function sendGroupMessage(userId, input, { forwardFrom = null, skip
   await requireGroupAccessPlan(userId, group);
 
   const visibility = forwardFrom ? forwardFrom.visibility : effectiveVisibility(group, input.visibility);
+  await assertUserSecurity(userId, { visibility, forwarding: Boolean(forwardFrom) });
   if (!skipContent) await enforceContent(userId, groupId, group, input.text);
 
   // Media: protected content must be an encrypted file owned by the sender.
@@ -539,6 +554,7 @@ export async function forwardGroupMessages(userId, { messageIds, toGroupIds, cli
       throw ApiError.forbidden('Private and Highly Protected messages cannot be forwarded', 'FORWARD_NOT_ALLOWED');
     }
     if (m.permissions?.viewOnce) throw ApiError.forbidden('View once messages cannot be forwarded', 'FORWARD_NOT_ALLOWED');
+    if (m.forwardFrozen) throw ApiError.forbidden('Forwarding of this message was stopped by the admin', 'FORWARD_FROZEN');
     sources.push(m);
   }
 
@@ -948,4 +964,36 @@ export async function listStarred(userId) {
     ...toGroupMessageDTO(m, userId, { users, viewerIsAdmin: isAdmin(active.get(String(m.group))) }),
     groupName: gmap.get(String(m.group)) ?? 'Group',
   }));
+}
+
+// ===========================================================================
+// Platform admin (admin panel): chain deletion + stop forwarding
+// ===========================================================================
+/** Deletes a message and every copy forwarded from it (DELETED_FOR_EVERYONE, reason admin / chain). */
+export async function adminDeleteChain(messageId) {
+  const m = await GroupMessage.findById(messageId).lean();
+  if (!m) throw ApiError.notFound('Message not found');
+  const descendants = await chainDescendants(m._id);
+  const ids = [m._id, ...descendants.map((d) => d._id)];
+  const now = new Date();
+  const wipe = {
+    $set: { status: 'deleted_for_everyone', deletedAt: now, deletedBy: null, text: '', reactions: [] },
+    $unset: { media: 1, location: 1, contact: 1, replyTo: 1 },
+  };
+  if (m.status === 'active') await GroupMessage.updateOne({ _id: m._id }, { ...wipe, $set: { ...wipe.$set, deletedReason: 'admin' } });
+  if (descendants.length) await GroupMessage.updateMany({ _id: { $in: descendants.map((d) => d._id) } }, { ...wipe, $set: { ...wipe.$set, deletedReason: 'chain' } });
+  await revokeFilesOfMessages(ids);
+  const affected = await GroupMessage.find({ _id: { $in: ids } }).lean();
+  for (const d of affected) {
+    await Group.updateOne({ _id: d.group, 'lastMessage.id': d._id }, { $set: { 'lastMessage.deleted': true, 'lastMessage.text': groupPreviewText(d) } });
+    await emitMessage('group:message:updated', d);
+  }
+  return { messageId: String(m._id), deleted: ids.length, groups: new Set(affected.map((a) => String(a.group))).size };
+}
+
+/** Stops (or allows again) forwarding for a whole chain. */
+export async function adminFreezeChain(rootId, frozen = true) {
+  const r = await GroupMessage.updateMany({ $or: [{ _id: toObjectId(rootId) }, { 'forward.rootId': toObjectId(rootId) }] }, { $set: { forwardFrozen: frozen } });
+  if (!r.matchedCount) throw ApiError.notFound('Message not found');
+  return { frozen, messages: r.matchedCount };
 }

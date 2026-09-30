@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { limiters, rateLimit } from '../../middlewares/rateLimit.js';
 import { validate } from '../../middlewares/validate.js';
+import { audit } from '../audit/audit.service.js';
 import * as auth from './auth.service.js';
 import { normalizeIdentifier } from './identifier.js';
 
@@ -73,15 +74,21 @@ function toTarget(b, ctx) {
   return id;
 }
 
+/** Login events for the admin "User Activity" timeline. */
+function logLogin(req, data) {
+  if (data?.user?.id) audit(data.user.id, 'login', { meta: { ip: req.ip, ua: String(req.get('user-agent') ?? '').slice(0, 160) } });
+  return data;
+}
+
 const router = Router();
 const ipLimit = rateLimit(limiters.auth, (req) => req.ip);
 
 router.post('/register', ipLimit, validate({ body: schemas.register }), async (req, res) => {
-  res.status(201).json({ ok: true, data: await auth.register(req.valid.body) });
+  res.status(201).json({ ok: true, data: logLogin(req, await auth.register(req.valid.body)) });
 });
 
 router.post('/login', ipLimit, validate({ body: schemas.login }), async (req, res) => {
-  res.json({ ok: true, data: await auth.login(req.valid.body) });
+  res.json({ ok: true, data: logLogin(req, await auth.login(req.valid.body)) });
 });
 
 router.post(
@@ -95,7 +102,7 @@ router.post(
 );
 
 router.post('/otp/verify', ipLimit, validate({ body: schemas.otpVerify }), async (req, res) => {
-  res.json({ ok: true, data: await auth.verifyOtp(req.valid.body) });
+  res.json({ ok: true, data: logLogin(req, await auth.verifyOtp(req.valid.body)) });
 });
 
 router.post('/refresh', ipLimit, validate({ body: schemas.refresh }), async (req, res) => {

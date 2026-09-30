@@ -9,6 +9,7 @@ import { toObjectId } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
 import { SecureFile } from '../files/secureFile.model.js';
 import { LocationHistory } from '../location/location.model.js';
+import { getSetting } from '../platform/platform.service.js';
 import { getAccess, groupAccessBlock, groupPremiumInfo } from '../subscription/subscription.service.js';
 import {
   adminIds,
@@ -38,7 +39,7 @@ const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 // ===========================================================================
 const inviteUrl = (code) => `${env.APP_URL.replace(/\/$/, '')}/group/${code}`;
 
-function inviteDTO(link, creatorName) {
+export function inviteDTO(link, creatorName) {
   return {
     code: link.code,
     url: inviteUrl(link.code),
@@ -134,7 +135,7 @@ function newCode(name) {
   return `${prefix}-${rand}`;
 }
 
-async function createInvite(groupId, name, userId, { expiry = '24h', maxJoins = 100, requireApproval = false } = {}) {
+export async function createInvite(groupId, name, userId, { expiry = '24h', maxJoins = 100, requireApproval = false } = {}) {
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       return await InviteLink.create({
@@ -152,7 +153,7 @@ async function createInvite(groupId, name, userId, { expiry = '24h', maxJoins = 
   throw new ApiError(500, 'INTERNAL', 'Could not generate a unique invite code');
 }
 
-function flattenSettings(settings, prefix = 'settings') {
+export function flattenSettings(settings, prefix = 'settings') {
   const set = {};
   for (const [section, value] of Object.entries(settings ?? {})) {
     if (value === undefined) continue;
@@ -162,7 +163,35 @@ function flattenSettings(settings, prefix = 'settings') {
   return set;
 }
 
+/** Admin "Message & Content Security" (global) -> defaults for a new group's security section. */
+async function securityDefaults() {
+  const g = await getSetting('security');
+  return {
+    publicForwarding: g.publicForwarding,
+    privateForwarding: g.privateForwarding,
+    chainDeletion: g.chainDeletion,
+    downloadDisabled: g.downloadDisabled,
+    externalShareDisabled: g.externalShareDisabled,
+    copyDisabledProtected: g.copyDisabled,
+    openInAppOnly: g.secureViewer,
+    screenshotProtection: g.screenshotProtection,
+    screenRecordingProtection: g.screenRecordingProtection,
+    dynamicWatermark: g.dynamicWatermark,
+  };
+}
+
 export async function createGroup(userId, input) {
+  // Admin Location Management "Show member location" = default visibility for new groups.
+  const loc = await getSetting('location');
+  const visibility = loc.showToMembers ? 'groupMembers' : loc.showToAdmin ? 'adminOnly' : 'nobody';
+  input = {
+    ...input,
+    settings: {
+      ...input.settings,
+      location: { visibility, ...input.settings?.location },
+      security: { ...(await securityDefaults()), ...input.settings?.security },
+    },
+  };
   const group = await Group.create({
     name: input.name,
     description: input.description,
@@ -366,7 +395,7 @@ export async function memberProfile(userId, groupId, targetId) {
   };
 }
 
-async function activateMember(groupId, targetUserId, actorId) {
+export async function activateMember(groupId, targetUserId, actorId) {
   await Promise.all([invalidateMembership(groupId, targetUserId), invalidateGroup(groupId)]);
   joinGroupRoom(targetUserId, groupId);
   await recomputePointers(groupId, { emit: false });
@@ -414,7 +443,7 @@ async function transferOwnership(groupId, leavingUserId) {
   return next.user;
 }
 
-async function deactivateMember(groupId, targetId, status) {
+export async function deactivateMember(groupId, targetId, status) {
   await GroupMember.updateOne({ group: groupId, user: targetId }, { $set: { status, role: 'member', pinned: false } });
   await Group.updateOne({ _id: groupId }, { $inc: { memberCount: -1 } });
   await Promise.all([invalidateMembership(groupId, targetId), invalidateGroup(groupId)]);

@@ -18,27 +18,102 @@ export const PlatformSetting = mongoose.model('PlatformSetting', platformSetting
 export const CONTENT_RULES = ['abuse', 'numbers', 'numberWords', 'spam', 'links', 'personalInfo', 'externalContact'];
 
 export const DEFAULT_CONTENT_SETTINGS = {
-  // Rules that always apply, even when a group turns them off.
+  // Rules that always apply, even when a group turns them off (Content Moderation "Content Control").
   globalRules: ['abuse'],
+  // Abuse / Profanity Filter
+  abuseEnabled: true,
   abuseWords: ['IDIOT', 'STUPID', 'BASTARD', 'NONSENSE'],
+  hinglish: true,
+  misspellings: true,
+  sensitivity: 2, // 1 low, 2 medium, 3 high
+  // Number Filter
+  hindiNumbers: true,
+  normalization: true,
+  // Penalties: warning -> mute 24h -> suspend 7 days
   maxWarnings: 5,
+  muteAfter: 3,
+  suspendAfter: 5,
 };
 
-const CACHE_KEY = 'platform:content';
+/** Every admin section with its defaults. */
+export const SETTING_DEFAULTS = {
+  content: DEFAULT_CONTENT_SETTINGS,
+  subscription: {
+    trialDays: 7,
+    afterExpiry: 'locked', // locked (read only) | limited (text only)
+    remindBeforeExpiry: true,
+    allowExtensionRequests: true,
+    freeExtension: true,
+    premiumExtension: true,
+    defaultExtensionDays: 7,
+    maxExtensions: 2, // 0 = unlimited
+  },
+  location: {
+    showToAdmin: true,
+    showToMembers: false, // new groups: adminOnly unless the admin changes it
+    liveStatusVisible: true,
+    autoDeleteDays: 30,
+  },
+  security: {
+    publicMessages: true,
+    privateMessages: true,
+    publicForwarding: true,
+    privateForwarding: false,
+    chainDeletion: true,
+    deleteForwardedCopies: true,
+    downloadDisabled: true,
+    externalShareDisabled: true,
+    copyDisabled: true,
+    secureViewer: true,
+    noPublicFileUrl: true,
+    screenshotProtection: true,
+    screenRecordingProtection: true,
+    blockCasting: true,
+    printRestriction: true,
+    dynamicWatermark: true,
+  },
+  system: {
+    verification: 'mobile_email', // mobile | email | mobile_email
+    openRegistration: true,
+    maxDevices: 3,
+    otpExpiryMin: 5,
+    directChat: true,
+    hideContactFromMembers: true,
+    autoStartingName: true,
+    pwaInstallable: true,
+    flagSecure: true,
+    minAppVersion: '1.0.0',
+    maxFileMb: 50,
+    fileTokenMin: 30,
+    auditRetentionDays: 730,
+    maintenance: false,
+    maintenanceMessage: 'SecureChat is under maintenance. Please try again in a few minutes.',
+  },
+  roles: {
+    super_admin: ['users', 'groups', 'messages', 'subscriptions', 'reports', 'settings'],
+    moderator: ['users', 'groups', 'messages', 'reports'],
+    support: ['users', 'subscriptions', 'reports'],
+  },
+};
 
-export async function getContentSettings() {
-  const cached = await redis.get(CACHE_KEY);
+const cacheKey = (key) => `platform:${key}`;
+
+export async function getSetting(key) {
+  const cached = await redis.get(cacheKey(key));
   if (cached) return JSON.parse(cached);
-  const row = await PlatformSetting.findOne({ key: 'content' }).lean();
-  const value = { ...DEFAULT_CONTENT_SETTINGS, ...(row?.value ?? {}) };
-  await redis.set(CACHE_KEY, JSON.stringify(value), 'EX', 300);
+  const row = await PlatformSetting.findOne({ key }).lean();
+  const value = { ...(SETTING_DEFAULTS[key] ?? {}), ...(row?.value ?? {}) };
+  await redis.set(cacheKey(key), JSON.stringify(value), 'EX', 300);
   return value;
 }
 
-export async function updateContentSettings(patch) {
-  const current = await getContentSettings();
+export async function updateSetting(key, patch) {
+  const current = await getSetting(key);
   const value = { ...current, ...patch };
-  await PlatformSetting.updateOne({ key: 'content' }, { $set: { value } }, { upsert: true });
-  await redis.del(CACHE_KEY);
+  await PlatformSetting.updateOne({ key }, { $set: { value } }, { upsert: true });
+  await redis.del(cacheKey(key));
   return value;
 }
+
+export const getContentSettings = () => getSetting('content');
+export const updateContentSettings = (patch) => updateSetting('content', patch);

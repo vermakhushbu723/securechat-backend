@@ -21,6 +21,7 @@ export function accessOf(u, now = Date.now()) {
   let until = null;
   if (premiumUntil && premiumUntil.getTime() > now) [access, until] = ['premium', premiumUntil];
   else if (extendedUntil && extendedUntil.getTime() > now) [access, until] = ['extended', extendedUntil];
+  else if (s.freeAccess) access = 'free'; // admin granted free access (no end date)
   else if (s.trialPending) access = 'unclaimed'; // new account: trial not claimed yet
   else if (trialEndsAt.getTime() > now) [access, until] = ['trial', trialEndsAt];
   return {

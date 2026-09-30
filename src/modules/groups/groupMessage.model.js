@@ -95,6 +95,8 @@ const groupMessageSchema = new Schema(
     forward: { type: forwardSchema, default: undefined },
     // Copies derived from this message (direct + indirect) -> "users reached".
     forwardCount: { type: Number, default: 0 },
+    // Admin "Stop forwarding" on a chain: this message and its copies cannot be forwarded again.
+    forwardFrozen: { type: Boolean, default: false },
     reactions: { type: [reactionSchema], default: [] },
     starredBy: { type: [Schema.Types.ObjectId], default: [] },
     deletedFor: { type: [Schema.Types.ObjectId], default: [] },

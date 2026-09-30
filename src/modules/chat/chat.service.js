@@ -15,7 +15,8 @@ import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { escapeRegex, toObjectId } from '../../utils/validators.js';
 import { SecureFile } from '../files/secureFile.model.js';
-import { requireOwnAccess } from '../subscription/subscription.service.js';
+import { getSetting } from '../platform/platform.service.js';
+import { assertUserSecurity, requireOwnAccess } from '../subscription/subscription.service.js';
 import { User } from '../users/user.model.js';
 import { Conversation, pairKeyOf } from './conversation.model.js';
 import { ConversationMember } from './conversationMember.model.js';
@@ -143,8 +144,14 @@ async function summaryFor(userId, conversationId) {
   return (await buildSummaries(userId, [member]))[0];
 }
 
+/** Admin System Settings: direct 1-to-1 chat can be turned off platform wide. */
+async function assertDirectChatOn() {
+  if (!(await getSetting('system')).directChat) throw ApiError.forbidden('Direct chats are turned off by the SecureChat team', 'DIRECT_CHAT_DISABLED');
+}
+
 export async function getOrCreateDirect(userId, peerId) {
   if (String(userId) === String(peerId)) throw ApiError.badRequest('You cannot chat with yourself');
+  await assertDirectChatOn();
   if (!(await getPublicUser(peerId))) throw ApiError.notFound('User not found');
 
   const pairKey = pairKeyOf(userId, peerId);
@@ -262,6 +269,7 @@ export async function clearChat(userId, conversationId, { hide = false } = {}) {
 // ===========================================================================
 
 export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
+  await assertDirectChatOn();
   let { conversationId } = input;
   let peerId;
   if (conversationId) {
@@ -277,6 +285,7 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
 
   // Protected media must be an encrypted file owned by the sender and not yet attached.
   const visibility = forwardedFrom ? 'public' : (input.visibility ?? 'public');
+  await assertUserSecurity(senderId, { visibility, forwarding: Boolean(forwardedFrom) });
   let media = input.media;
   let secureFile = null;
   if (media?.secureFileId) {

@@ -62,6 +62,23 @@ Admin tasks on the server (`cd /opt/securechat/app && sudo -u securechat npm run
 
 The same actions are available over HTTP at `/api/v1/admin/*` with the header `x-admin-key: <ADMIN_API_KEY>`.
 
+### Admin panel (`/admin`)
+
+The Flutter admin panel (`secureChat/apps/admin_app`, served at `https://<domain>/admin/`) signs in with a
+staff account: email + password, then a 6 digit code sent to the staff email (shown in the panel while
+`OTP_DEV_MODE=true` and SMTP is not configured). Create the first super admin on the server:
+
+```bash
+sudo -u securechat node scripts/admin.js staff admin@example.com '<strong password>' 'Super Admin' super_admin
+```
+
+Roles: `super_admin` (everything, staff + roles), `moderator` and `support` (permissions editable in
+Admin / Staff). Every admin action is written to the admin audit log. API: `/api/v1/admin/*` with
+`Authorization: Bearer <staff token>` (dashboard, users + moderation, groups + members + invites, trials,
+plans, coupons, extension requests, access, locations, message monitoring, forward chains, content /
+number / abuse filters, security scopes, reports, analytics, notifications, audit logs, staff, roles,
+system settings + health). Test: `npm run test:admin` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`).
+
 ## Features (1-to-1)
 
 | Area | What works |

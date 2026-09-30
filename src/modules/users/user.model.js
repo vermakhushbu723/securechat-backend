@@ -57,10 +57,27 @@ const userSchema = new Schema(
       trialEndsAt: { type: Date, default: null }, // admin override / claimed trial end
       // New accounts: the 7 day trial starts only when the user taps "Claim free trial".
       trialPending: { type: Boolean, default: false },
+      // Admin "Free" access: full access without a plan until removed.
+      freeAccess: { type: Boolean, default: false },
+      plan: { type: String, default: null }, // premium plan id the access came from
+      grantedBy: { type: String, default: null }, // "Payment" | "Admin: <name>"
+      extensionCount: { type: Number, default: 0 },
     },
     // Content policy violations ("Warning 1 of 5").
     warnings: { type: Number, default: 0 },
-    status: { type: String, enum: ['active', 'blocked'], default: 'active' },
+    status: { type: String, enum: ['active', 'blocked', 'suspended', 'deleted'], default: 'active' },
+    // Platform admin moderation (admin panel).
+    moderation: {
+      reason: { type: String, default: null },
+      at: { type: Date, default: null },
+      by: { type: String, default: null }, // staff name
+      suspendedUntil: { type: Date, default: null },
+      // Read only everywhere (admin "Restrict messaging" / content penalty "mute 24h").
+      restricted: { type: Boolean, default: false },
+      restrictedUntil: { type: Date, default: null },
+    },
+    // Admin Security Settings, scope "User": overrides for this user (null = platform default).
+    securityOverrides: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );
@@ -79,7 +96,24 @@ userSchema.pre('validate', function setSearchName() {
   if (this.isModified('name') || this.isModified('username')) this.searchTokens = searchTokensOf(this.name, this.username);
 });
 
+userSchema.index({ status: 1, createdAt: -1 });
+
 export const User = mongoose.model('User', userSchema);
+
+/** Blocked / deleted / suspended (until the suspension ends) accounts cannot sign in or chat. */
+export function accountState(u, now = Date.now()) {
+  const status = u?.status ?? 'active';
+  if (status === 'suspended' && u.moderation?.suspendedUntil && new Date(u.moderation.suspendedUntil).getTime() <= now) return 'active';
+  return status;
+}
+
+/** Read only restriction set by the admin or a content penalty. */
+export function isRestricted(u, now = Date.now()) {
+  const m = u?.moderation;
+  if (!m) return false;
+  if (m.restricted) return true;
+  return Boolean(m.restrictedUntil && new Date(m.restrictedUntil).getTime() > now);
+}
 
 /** Name other group members see: the chosen display name or the first word of the name. */
 export const displayNameOf = (u) => (u?.displayName || u?.name?.trim().split(/\s+/)[0] || 'Member').slice(0, 20);

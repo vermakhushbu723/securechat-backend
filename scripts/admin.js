@@ -1,5 +1,6 @@
 /**
  * Platform admin tasks (run on the server):
+ *   node scripts/admin.js staff <email> <password> [name] [role]   admin panel account
  *   node scripts/admin.js migrate                         search tokens + one time 7 day grace for expired trials
  *   node scripts/admin.js premium  <user> <days>          user = id, mobile number, email or username (0 days removes)
  *   node scripts/admin.js extend   <user> <days>          admin approved extension
@@ -11,6 +12,8 @@
  */
 import { connectMongo, disconnectMongo } from '../src/db/mongo.js';
 import { closeRedis } from '../src/db/redis.js';
+import { hashPassword } from '../src/modules/admin/admin.auth.js';
+import { Staff } from '../src/modules/admin/admin.models.js';
 import { normalizeIdentifier } from '../src/modules/auth/identifier.js';
 import { setGroupPremium } from '../src/modules/subscription/subscription.routes.js';
 import * as sub from '../src/modules/subscription/subscription.service.js';
@@ -93,8 +96,21 @@ try {
       console.log(`${r.id}: ${r.status}`);
       break;
     }
+    case 'staff': {
+      // Admin panel login: node scripts/admin.js staff <email> <password> [name] [super_admin|moderator|support]
+      const [email, password, name = 'Super Admin', role = 'super_admin'] = args;
+      if (!email || !password || password.length < 8) throw new Error('Usage: staff <email> <password (8+ chars)> [name] [role]');
+      const passwordHash = await hashPassword(password);
+      const s = await Staff.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { $set: { name, role, passwordHash, status: 'active' }, $inc: { tokenVersion: 1 } },
+        { upsert: true, returnDocument: 'after', lean: true },
+      );
+      console.log(`Staff ${s.email} (${s.role}) ready - sign in at /admin`);
+      break;
+    }
     default:
-      console.log('Commands: migrate | premium <user> <days> | extend <user> <days> | status <user> | group-premium <group> on|off [days] | requests | approve <id> [days] | reject <id>');
+      console.log('Commands: staff <email> <password> [name] [role] | migrate | premium <user> <days> | extend <user> <days> | status <user> | group-premium <group> on|off [days] | requests | approve <id> [days] | reject <id>');
   }
 } catch (err) {
   console.error(err.message);

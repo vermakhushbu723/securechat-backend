@@ -5,6 +5,7 @@ import { createRedis } from '../db/redis.js';
 import { GroupMember } from '../modules/groups/group.model.js';
 import { expireDirectMessages } from '../modules/chat/chat.service.js';
 import { expireMessages } from '../modules/groups/groupMessage.service.js';
+import { pruneLocationHistory, sendDueNotifications } from '../modules/admin/admin.system.js';
 import { User } from '../modules/users/user.model.js';
 import { onlineMap } from '../services/presence.service.js';
 import { PUSH_QUEUE } from '../services/queue.service.js';
@@ -47,6 +48,7 @@ export function startPushWorker() {
     PUSH_QUEUE,
     async (job) => {
       if (job.data.kind === 'group') return { delivered: await pushGroup(job.data) };
+      if (job.data.kind === 'broadcast') return { delivered: await pushTo(job.data.userIds, { title: job.data.title, body: job.data.body, data: { notificationId: job.data.notificationId } }) };
       const { recipientId, senderName, preview, conversationId } = job.data;
       return { delivered: await pushTo([recipientId], { title: senderName, body: preview, data: { conversationId } }) };
     },
@@ -65,6 +67,11 @@ export function startPushWorker() {
     expireDirectMessages()
       .then((n) => n && logger.info({ expired: n }, 'Expired direct messages'))
       .catch((err) => logger.warn({ err: err.message }, 'Direct expiry sweep failed'));
+    // Admin panel: scheduled broadcasts + location history retention.
+    sendDueNotifications()
+      .then((n) => n && logger.info({ sent: n }, 'Scheduled notifications sent'))
+      .catch((err) => logger.warn({ err: err.message }, 'Notification sweep failed'));
+    pruneLocationHistory().catch((err) => logger.warn({ err: err.message }, 'Location retention sweep failed'));
   }, 60_000);
   sweeper.unref();
   const close = worker.close.bind(worker);

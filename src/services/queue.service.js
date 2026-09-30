@@ -30,6 +30,18 @@ export async function enqueuePush(data) {
   }
 }
 
+/** Admin broadcast: push to many users (processed by the push worker). */
+export async function enqueueBroadcast(userIds, payload) {
+  for (let i = 0; i < userIds.length; i += 1000) {
+    await queue().add('broadcast', { kind: 'broadcast', userIds: userIds.slice(i, i + 1000), ...payload });
+  }
+}
+
+/** Queue health for the admin System Settings service table. */
+export async function queueCounts() {
+  return queue().getJobCounts('waiting', 'active', 'failed', 'delayed');
+}
+
 export async function closeQueues() {
   await pushQueue?.close();
 }

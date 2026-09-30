@@ -6,6 +6,7 @@ import { logger } from '../config/logger.js';
 import { createRedis } from '../db/redis.js';
 import { markAllDelivered } from '../modules/chat/chat.service.js';
 import { markAllGroupsDelivered } from '../modules/groups/groupMessage.service.js';
+import { getAccess } from '../modules/subscription/subscription.service.js';
 import { markOffline, markOnline, refreshTTL } from '../services/presence.service.js';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { registerChatHandlers } from './chat.handlers.js';
@@ -29,11 +30,14 @@ export function createSocketServer(httpServer) {
   io.adapter(createAdapter(createRedis('io:pub'), createRedis('io:sub')));
   setIO(io);
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token ?? socket.handshake.headers.authorization?.replace(/^Bearer /, '');
       if (!token) throw new Error('missing token');
-      socket.data.userId = verifyAccessToken(token).sub;
+      const userId = verifyAccessToken(token).sub;
+      // Blocked / suspended accounts cannot open a realtime connection.
+      if ((await getAccess(userId)).accountState !== 'active') throw new Error('account not active');
+      socket.data.userId = userId;
       next();
     } catch {
       const err = new Error('UNAUTHORIZED');

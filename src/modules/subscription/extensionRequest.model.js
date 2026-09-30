@@ -11,8 +11,13 @@ const extensionRequestSchema = new Schema(
     days: { type: Number, default: 7 },
     status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true },
     decidedAt: { type: Date, default: null },
+    decidedBy: { type: String, default: null }, // staff name
+    grantedAs: { type: String, enum: ['extension', 'premium', null], default: null }, // admin chose "Premium" instead
+
   },
   { timestamps: true },
 );
+
+extensionRequestSchema.index({ status: 1, _id: -1 });
 
 export const ExtensionRequest = mongoose.model('ExtensionRequest', extensionRequestSchema);

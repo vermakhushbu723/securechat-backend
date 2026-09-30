@@ -9,6 +9,7 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { redis } from './db/redis.js';
 import { requireAuth } from './middlewares/auth.js';
+import { ApiError } from './utils/ApiError.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { limiters, rateLimit } from './middlewares/rateLimit.js';
 import authRoutes from './modules/auth/auth.routes.js';
@@ -22,7 +23,9 @@ import {
   reportRouter,
   streamSecureFile,
 } from './modules/groups/group.routes.js';
-import { adminRouter, subscriptionRouter } from './modules/subscription/subscription.routes.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
+import { getSetting } from './modules/platform/platform.service.js';
+import { subscriptionRouter } from './modules/subscription/subscription.routes.js';
 import mediaRoutes, { UPLOAD_ROOT } from './modules/media/media.routes.js';
 import userRoutes from './modules/users/user.routes.js';
 
@@ -79,8 +82,29 @@ export function createApp() {
   // Public: invite preview (join page before login) and token-authenticated secure file stream.
   api.use('/invites', inviteRouter);
   api.get('/files/stream', streamSecureFile);
-  // Platform admin (x-admin-key), separate from user auth.
+  // Admin panel (staff login / x-admin-key), separate from user auth.
   api.use('/admin', adminRouter);
+  // App config for clients: maintenance banner, minimum app version, direct chat on/off.
+  api.get('/config', async (_req, res) => {
+    const sys = await getSetting('system');
+    res.json({
+      ok: true,
+      data: {
+        maintenance: sys.maintenance,
+        maintenanceMessage: sys.maintenanceMessage,
+        minAppVersion: sys.minAppVersion,
+        directChat: sys.directChat,
+        openRegistration: sys.openRegistration,
+        maxFileMb: sys.maxFileMb,
+      },
+    });
+  });
+  // Maintenance mode (admin System Settings): the app API answers 503 until it is turned off.
+  api.use(async (_req, _res, next) => {
+    const sys = await getSetting('system');
+    if (sys.maintenance) throw new ApiError(503, 'MAINTENANCE', sys.maintenanceMessage);
+    next();
+  });
   api.use(requireAuth);
   api.use('/users', userRoutes);
   api.use('/conversations', conversationRouter);

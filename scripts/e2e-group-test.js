@@ -2,6 +2,8 @@
  * End-to-end test of every group feature with 5 real users over real sockets:
  *   npm run test:groups      (server must be running)
  */
+import 'dotenv/config';
+
 import sharp from 'sharp';
 
 import { api, BASE_URL, clientId, connectSocket, emit, expectNoEvent, loginOrRegister, TEST_USERS, waitFor } from './lib/client.js';
@@ -51,6 +53,28 @@ const EXTRA = [
   { name: 'Neha Singh', username: 'neha_test', phone: '+919000000004', password: PASSWORD },
   { name: 'Amit Sharma', username: 'amit_test', phone: '+919000000005', password: PASSWORD },
 ];
+// The content filter step sends many blocked messages on purpose: turn the automatic
+// mute / suspend penalties off for this run and lift penalties left by earlier runs.
+const adminKey = process.env.ADMIN_API_KEY;
+async function admin(method, path, body) {
+  const res = await fetch(`${BASE_URL}/api/v1/admin${path}`, { method, headers: { 'content-type': 'application/json', 'x-admin-key': adminKey }, body: body && JSON.stringify(body) });
+  return (await res.json()).data;
+}
+let penalties = null;
+if (adminKey) {
+  const cs = await admin('GET', '/settings/content');
+  penalties = { muteAfter: cs.muteAfter, suspendAfter: cs.suspendAfter };
+  await admin('PUT', '/settings/content', { muteAfter: 0, suspendAfter: 0 });
+  for (const u of [...TEST_USERS, ...EXTRA]) {
+    const found = await admin('GET', `/users?q=${u.username}`);
+    for (const row of found?.items ?? []) {
+      if (row.username !== u.username) continue;
+      if (row.status !== 'active') await admin('POST', `/users/${row.id}/action`, { action: 'unblock' });
+      if (row.restricted) await admin('POST', `/users/${row.id}/action`, { action: 'unrestrict' });
+    }
+  }
+}
+
 const [A, P, R, N, M] = await Promise.all([...TEST_USERS, ...EXTRA].map(loginOrRegister));
 const users = { A, P, R, N, M };
 const id = (u) => u.user.id;
@@ -670,6 +694,7 @@ await step('delete group (creator only) -> every member notified', async () => {
 });
 
 for (const sock of Object.values(s)) sock.disconnect();
+if (penalties) await admin('PUT', '/settings/content', penalties);
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed${failed.length ? `, ${failed.length} failed` : ''}\n`);
 process.exit(failed.length ? 1 : 0);

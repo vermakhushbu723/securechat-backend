@@ -7,7 +7,8 @@ import { redis } from '../../db/redis.js';
 import { sendOtpEmail } from '../../services/mail.service.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../../utils/jwt.js';
-import { toSelfUser, User } from '../users/user.model.js';
+import { getSetting } from '../platform/platform.service.js';
+import { accountState, toSelfUser, User } from '../users/user.model.js';
 
 const BCRYPT_ROUNDS = 10;
 const refreshTtlSec = () => env.JWT_REFRESH_TTL_DAYS * 86_400;
@@ -29,7 +30,7 @@ async function issueTokens(userId) {
   return { accessToken, refreshToken };
 }
 
-async function revokeAll(userId) {
+export async function revokeAll(userId) {
   const jtis = await redis.smembers(rtSetKey(userId));
   const pipe = redis.pipeline();
   for (const jti of jtis) pipe.del(rtKey(userId, jti));
@@ -47,7 +48,7 @@ export async function refresh(refreshToken) {
   }
   await redis.srem(rtSetKey(sub), jti);
   const user = await User.findById(sub).lean();
-  if (!user || user.status !== 'active') throw ApiError.unauthorized('Account not available');
+  if (!user || accountState(user) !== 'active') throw ApiError.unauthorized('Account not available');
   return issueTokens(sub);
 }
 
@@ -55,6 +56,21 @@ export async function logout(refreshToken, { all = false } = {}) {
   const { sub, jti } = verifyRefreshToken(refreshToken);
   if (all) return revokeAll(sub);
   await redis.multi().del(rtKey(sub, jti)).srem(rtSetKey(sub), jti).exec();
+}
+
+function assertCanSignIn(user) {
+  const state = accountState(user);
+  if (state === 'suspended') {
+    const until = user.moderation?.suspendedUntil ? new Date(user.moderation.suspendedUntil).toDateString() : 'further notice';
+    throw ApiError.forbidden(`Your account is suspended until ${until}`, 'ACCOUNT_SUSPENDED');
+  }
+  if (state !== 'active') throw ApiError.forbidden('Account is blocked', 'ACCOUNT_BLOCKED');
+}
+
+/** Admin System Settings "Open registration" off: no new accounts. */
+async function assertRegistrationOpen() {
+  const sys = await getSetting('system');
+  if (!sys.openRegistration) throw ApiError.forbidden('New registrations are closed right now', 'REGISTRATION_CLOSED');
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +81,7 @@ export async function register({ name, username, phone, email, password }) {
   if (or.length && (await User.exists({ $or: or }))) {
     throw ApiError.conflict('Username, phone or email already registered', 'ALREADY_REGISTERED');
   }
+  await assertRegistrationOpen();
   const user = await User.create({
     name,
     username,
@@ -85,7 +102,7 @@ export async function login({ identifier, password }) {
   if (!user?.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
     throw ApiError.unauthorized('Invalid credentials');
   }
-  if (user.status !== 'active') throw ApiError.forbidden('Account is blocked', 'ACCOUNT_BLOCKED');
+  assertCanSignIn(user);
   return { user: toSelfUser(user), ...(await issueTokens(user._id)) };
 }
 
@@ -159,6 +176,7 @@ export async function verifyOtp({ kind, value, code, name, phone, email }) {
     if (user && !user.email) await User.updateOne({ _id: user._id }, { $set: { email } });
     user = user ? await User.findById(user._id).lean() : null;
     if (!user) {
+      await assertRegistrationOpen();
       isNew = true;
       user = (await User.create({ phone, email, name: name ?? `User ${phone.slice(-4)}`, profileCompleted: false, subscription: { trialPending: true } })).toObject();
     }
@@ -166,11 +184,12 @@ export async function verifyOtp({ kind, value, code, name, phone, email }) {
     user = await User.findOne({ [kind]: value }).lean();
     isNew = !user;
     if (isNew) {
+      await assertRegistrationOpen();
       const fallback = kind === 'phone' ? `User ${value.slice(-4)}` : value.split('@')[0].slice(0, 60);
       user = (await User.create({ [kind]: value, name: name ?? fallback, profileCompleted: false, subscription: { trialPending: true } })).toObject();
     }
   }
-  if (user.status !== 'active') throw ApiError.forbidden('Account is blocked', 'ACCOUNT_BLOCKED');
+  assertCanSignIn(user);
   const self = toSelfUser(user);
   return { isNew, profileCompleted: self.profileCompleted, user: self, ...(await issueTokens(user._id)) };
 }

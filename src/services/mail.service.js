@@ -39,3 +39,22 @@ export async function sendOtpEmail(to, code) {
   });
   return true;
 }
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+/** Admin broadcast (Notifications screen, channel "Email"). */
+export async function sendNoticeEmail(to, title, body) {
+  if (!mailEnabled()) return false;
+  await getTransport().sendMail({
+    from: env.SMTP_FROM || env.SMTP_USER,
+    to,
+    subject: title,
+    text: body,
+    html: `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:24px;border:1px solid #E7E3F8;border-radius:12px">
+      <h2 style="color:#6C2BF2;margin:0 0 12px">SecureChat</h2>
+      <h3 style="color:#1A1640;margin:0 0 8px">${escapeHtml(title)}</h3>
+      <p style="color:#1A1640;white-space:pre-line">${escapeHtml(body)}</p>
+    </div>`,
+  });
+  return true;
+}
