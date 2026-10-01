@@ -17,6 +17,7 @@ import { getContentSettings } from '../platform/platform.service.js';
 import { loadDirectMessageForUser } from '../chat/chat.service.js';
 import { Message } from '../chat/message.model.js';
 import { assertUserSecurity, requireGroupAccessPlan, requireOwnAccess } from '../subscription/subscription.service.js';
+import { assertNoBlockedTerm } from '../moderation/blockedTerm.service.js';
 import { applyContentPenalty } from '../users/moderation.service.js';
 import { displayNameOf, User } from '../users/user.model.js';
 import {
@@ -195,6 +196,8 @@ export async function sendGroupMessage(userId, input, { forwardFrom = null, skip
 
   const visibility = forwardFrom ? forwardFrom.visibility : effectiveVisibility(group, input.visibility);
   await assertUserSecurity(userId, { visibility, forwarding: Boolean(forwardFrom) });
+  // Admin Blocked Keywords apply to forwards too (the list can change after the original was sent).
+  await assertNoBlockedTerm(userId, input.text, 'groups', { groupId });
   if (!skipContent) await enforceContent(userId, groupId, group, input.text);
 
   // Media: protected content must be an encrypted file owned by the sender.
@@ -433,6 +436,7 @@ export async function editGroupMessage(userId, { messageId, text }) {
   if (Date.now() - m.createdAt.getTime() > EDIT_WINDOW_MS) {
     throw ApiError.forbidden(`Messages can be edited for ${env.MESSAGE_EDIT_WINDOW_MIN} minutes`, 'EDIT_WINDOW_EXPIRED');
   }
+  await assertNoBlockedTerm(userId, text, 'groups', { groupId: m.group });
   await enforceContent(userId, String(m.group), group, text);
   const updated = await GroupMessage.findByIdAndUpdate(m._id, { $set: { text, editedAt: new Date() } }, { returnDocument: 'after', lean: true });
   await Group.updateOne({ _id: m.group, 'lastMessage.id': m._id }, { $set: { 'lastMessage.text': groupPreviewText(updated) } });

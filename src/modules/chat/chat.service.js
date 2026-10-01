@@ -15,6 +15,7 @@ import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { escapeRegex, toObjectId } from '../../utils/validators.js';
 import { SecureFile } from '../files/secureFile.model.js';
+import { assertNoBlockedTerm } from '../moderation/blockedTerm.service.js';
 import { getSetting } from '../platform/platform.service.js';
 import { assertUserSecurity, requireOwnAccess } from '../subscription/subscription.service.js';
 import { User } from '../users/user.model.js';
@@ -286,6 +287,7 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
   // Protected media must be an encrypted file owned by the sender and not yet attached.
   const visibility = forwardedFrom ? 'public' : (input.visibility ?? 'public');
   await assertUserSecurity(senderId, { visibility, forwarding: Boolean(forwardedFrom) });
+  await assertNoBlockedTerm(senderId, input.text, 'direct');
   let media = input.media;
   let secureFile = null;
   if (media?.secureFileId) {
@@ -574,6 +576,7 @@ export async function editMessage(userId, { messageId, text }) {
   if (Date.now() - m.createdAt.getTime() > EDIT_WINDOW_MS) {
     throw ApiError.forbidden(`Messages can be edited for ${env.MESSAGE_EDIT_WINDOW_MIN} minutes`, 'EDIT_WINDOW_EXPIRED');
   }
+  await assertNoBlockedTerm(userId, text, 'direct');
   const updated = await Message.findByIdAndUpdate(
     messageId,
     { $set: { text, editedAt: new Date() } },

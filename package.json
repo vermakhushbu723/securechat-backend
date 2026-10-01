@@ -19,7 +19,8 @@
     "test:plans": "node scripts/e2e-plans-test.js",
     "test:dm-privacy": "node scripts/e2e-dm-privacy-test.js",
     "admin": "node scripts/admin.js",
-    "test:admin": "node scripts/e2e-admin-test.js"
+    "test:admin": "node scripts/e2e-admin-test.js",
+    "test:keywords": "node scripts/e2e-keywords-test.js"
   },
   "author": "",
   "license": "UNLICENSED",

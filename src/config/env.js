@@ -47,6 +47,8 @@ const schema = z.object({
   // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
   ADMIN_API_KEY: z.string().default(''),
   // Admin panel 2-step code: a fixed 6 digit code instead of a random one (empty = random code by email).
+  // Admin panel login: false = email + password only (default), true = also a 6 digit code by email.
+  ADMIN_TWO_FACTOR: bool('false'),
   ADMIN_FIXED_OTP: z.string().regex(/^(\d{6})?$/, 'ADMIN_FIXED_OTP must be 6 digits').default(''),
   RUN_WORKERS: bool('true'),
   CLUSTER_WORKERS: z.coerce.number().int().min(0).default(0),

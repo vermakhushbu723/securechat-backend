@@ -6,6 +6,7 @@ import { validate } from '../../middlewares/validate.js';
 import { objectId } from '../../utils/validators.js';
 import { settingsInput } from '../groups/group.schema.js';
 import { adminDeleteChain, adminFreezeChain } from '../groups/groupMessage.service.js';
+import * as blocked from '../moderation/blockedTerm.service.js';
 import { CONTENT_RULES, getSetting, updateSetting } from '../platform/platform.service.js';
 import { decideRequest, grantExtension, grantPremium, setAccess, setTrial } from '../subscription/subscription.service.js';
 import { setGroupPremium } from '../subscription/subscription.routes.js';
@@ -476,7 +477,44 @@ adminRouter.post('/forward-chains/:id/freeze', can('messages'), validate({ param
   ok(res, data);
 });
 
-adminRouter.get('/moderation/log', can('messages'), validate({ query: listQuery.extend({ rule: z.enum(['all', ...CONTENT_RULES]).optional() }) }), async (req, res) =>
+// Blocked Keywords: words / sentences / links that cannot be sent in 1-to-1 chats or groups.
+adminRouter.get('/blocked-terms', can('messages'), validate({ query: listQuery.extend({ type: z.enum(['all', 'word', 'sentence', 'link', 'inactive']).optional() }) }), async (req, res) =>
+  ok(res, await blocked.listTerms({ q: req.valid.query.q, type: req.valid.query.type, page: req.valid.query.page, limit: req.valid.query.limit })),
+);
+adminRouter.post(
+  '/blocked-terms',
+  can('messages'),
+  validate({
+    body: z.strictObject({
+      texts: z.array(z.string().trim().min(1).max(300)).min(1).max(500),
+      partial: z.boolean().default(false),
+      scope: z.enum(['all', 'direct', 'groups']).default('all'),
+    }),
+  }),
+  async (req, res) => {
+    const data = await blocked.addTerms(req.valid.body.texts, { partial: req.valid.body.partial, scope: req.valid.body.scope, createdBy: req.staff.name });
+    if (data.added.length) logAdmin(req, `Added ${data.added.length} blocked keyword${data.added.length === 1 ? '' : 's'}`, 'messages', { target: data.added.map((t) => t.text).join(', ').slice(0, 200) });
+    ok(res, data, 201);
+  },
+);
+adminRouter.post('/blocked-terms/test', can('messages'), validate({ body: z.strictObject({ text: z.string().max(4096) }) }), async (req, res) => ok(res, await blocked.testText(req.valid.body.text)));
+adminRouter.patch(
+  '/blocked-terms/:id',
+  can('messages'),
+  validate({ params: idParam, body: z.strictObject({ active: bool, partial: bool, scope: z.enum(['all', 'direct', 'groups']).optional() }) }),
+  async (req, res) => {
+    const data = await blocked.updateTerm(req.valid.params.id, req.valid.body);
+    logAdmin(req, req.valid.body.active === false ? 'Turned off blocked keyword' : req.valid.body.active ? 'Turned on blocked keyword' : 'Edited blocked keyword', 'messages', { target: data.text, targetId: data.id });
+    ok(res, data);
+  },
+);
+adminRouter.delete('/blocked-terms/:id', can('messages'), validate({ params: idParam }), async (req, res) => {
+  const data = await blocked.deleteTerm(req.valid.params.id);
+  logAdmin(req, 'Removed blocked keyword', 'messages', { target: data.text, targetId: req.valid.params.id });
+  ok(res, data);
+});
+
+adminRouter.get('/moderation/log', can('messages'), validate({ query: listQuery.extend({ rule: z.enum(['all', 'keyword', ...CONTENT_RULES]).optional() }) }), async (req, res) =>
   ok(res, await content.blockedLog(req.valid.query)),
 );
 

@@ -34,7 +34,7 @@ function signStaffToken(staff) {
 
 async function session(staff) {
   await Staff.updateOne({ _id: staff._id }, { $set: { lastActiveAt: new Date() } });
-  return { token: signStaffToken(staff), staff: { ...staffDTO(staff), permissions: await permissionsOf(staff.role) } };
+  return { token: signStaffToken(staff), staff: { ...staffDTO(staff), permissions: await permissionsOf(staff.role) }, twoFactorEnabled: env.ADMIN_TWO_FACTOR };
 }
 
 export async function permissionsOf(role) {
@@ -50,7 +50,8 @@ export async function login({ email, password }, ip) {
   const staff = await Staff.findOne({ email: email.toLowerCase().trim() }).select('+passwordHash').lean();
   if (!staff || !(await bcrypt.compare(password, staff.passwordHash))) throw ApiError.unauthorized('Invalid email or password');
   if (staff.status !== 'active') throw ApiError.forbidden('This admin account is suspended', 'STAFF_SUSPENDED');
-  if (!staff.twoFactor) {
+  // Email + password only unless ADMIN_TWO_FACTOR=true (then the staff 2-step setting applies).
+  if (!env.ADMIN_TWO_FACTOR || !staff.twoFactor) {
     logAdmin({ staff, ip }, 'Logged in', 'auth');
     return { twoFactor: false, ...(await session(staff)) };
   }

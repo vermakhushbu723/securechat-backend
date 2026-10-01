@@ -24,6 +24,7 @@ import {
   streamSecureFile,
 } from './modules/groups/group.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
+import { activeTerms } from './modules/moderation/blockedTerm.service.js';
 import { getSetting } from './modules/platform/platform.service.js';
 import { subscriptionRouter } from './modules/subscription/subscription.routes.js';
 import mediaRoutes, { UPLOAD_ROOT } from './modules/media/media.routes.js';
@@ -106,6 +107,8 @@ export function createApp() {
     next();
   });
   api.use(requireAuth);
+  // Admin Blocked Keywords for the composer (send button disabled while typing).
+  api.get('/blocked-terms', async (_req, res) => res.json({ ok: true, data: await activeTerms() }));
   api.use('/users', userRoutes);
   api.use('/conversations', conversationRouter);
   api.use('/messages', messageRouter);
