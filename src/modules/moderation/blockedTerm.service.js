@@ -7,6 +7,8 @@ import { ApiError } from '../../utils/ApiError.js';
 import { compile, findBlocked, normalize, normalizeLink, typeOf } from '../../utils/blockedTerms.js';
 import { escapeRegex } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
+import { getContentSettings } from '../platform/platform.service.js';
+import { User } from '../users/user.model.js';
 
 const { Schema } = mongoose;
 
@@ -84,7 +86,17 @@ export async function assertNoBlockedTerm(userId, text, scope, { groupId = null 
   if (!hit) return;
   BlockedTerm.updateOne({ _id: hit.id }, { $inc: { hits: 1 }, $set: { lastHitAt: new Date() } }).catch((err) => logger.warn({ err: err.message }, 'Blocked term hit count failed'));
   audit(userId, 'content_blocked', { group: groupId, meta: { rule: 'keyword', term: hit.text, scope, text: String(text).slice(0, 200) } });
-  throw new ApiError(422, 'CONTENT_BLOCKED', 'Can not send. This message contains text that is not allowed.', { rule: 'keyword', term: hit.text });
+  // Counts as a content warning like the other filters.
+  const [u, cs] = await Promise.all([
+    User.findByIdAndUpdate(userId, { $inc: { warnings: 1 } }, { returnDocument: 'after', lean: true, projection: { warnings: 1 } }),
+    getContentSettings(),
+  ]);
+  throw new ApiError(422, 'CONTENT_BLOCKED', 'Can not send. This message contains text that is not allowed.', {
+    rule: 'keyword',
+    term: hit.text,
+    warnings: u?.warnings ?? 1,
+    maxWarnings: cs.maxWarnings,
+  });
 }
 
 // ---------------------------------------------------------------------------

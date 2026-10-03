@@ -29,6 +29,8 @@ const settingsSchema = new Schema(
       // Creator option: members without their own premium may reply and open protected
       // files while the group is premium (creator has premium or the admin approved it).
       freeAccess: { type: Boolean, default: false },
+      // Group admin: members can search the member list (owner / admins always can).
+      memberSearch: { type: Boolean, default: true },
     },
     security: {
       publicForwarding: { type: Boolean, default: true },

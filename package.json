@@ -20,7 +20,9 @@
     "test:dm-privacy": "node scripts/e2e-dm-privacy-test.js",
     "admin": "node scripts/admin.js",
     "test:admin": "node scripts/e2e-admin-test.js",
-    "test:keywords": "node scripts/e2e-keywords-test.js"
+    "test:keywords": "node scripts/e2e-keywords-test.js",
+    "test:search-phone": "node scripts/e2e-search-phone-test.js",
+    "test:phone-unit": "node scripts/phone-guard-unit-test.js"
   },
   "author": "",
   "license": "UNLICENSED",

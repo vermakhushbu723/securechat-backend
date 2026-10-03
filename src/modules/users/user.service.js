@@ -12,6 +12,7 @@ import { ApiError } from '../../utils/ApiError.js';
 import { escapeRegex } from '../../utils/validators.js';
 import { Block } from './block.model.js';
 import { normalizeIdentifier } from '../auth/identifier.js';
+import { assertUserSearch } from '../moderation/searchPermission.service.js';
 import { searchTokensOf, toPublicUser, toSelfUser, User } from './user.model.js';
 
 export async function getMe(userId) {
@@ -72,6 +73,7 @@ export async function completeProfile(userId, input) {
  * Users who turned off "Anyone can find me" are never listed. Uses indexes only.
  */
 export async function search(userId, q, limit) {
+  await assertUserSearch(userId);
   // A full mobile number / email ID is an exact lookup; anything else searches names.
   const id = normalizeIdentifier(q);
   const words = id ? [] : searchTokensOf(q.trim(), '').slice(0, 5);

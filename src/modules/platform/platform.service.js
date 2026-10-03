@@ -33,6 +33,8 @@ export const DEFAULT_CONTENT_SETTINGS = {
   maxWarnings: 5,
   muteAfter: 3,
   suspendAfter: 5,
+  // Mobile number protection: blocked attempts in 10 minutes before 1 hour read only (0 = off).
+  phoneRestrictAfter: 3,
 };
 
 /** Every admin section with its defaults. */
@@ -78,6 +80,9 @@ export const SETTING_DEFAULTS = {
     maxDevices: 3,
     otpExpiryMin: 5,
     directChat: true,
+    // Search Permissions: 1-to-1 user search and group member search for everyone.
+    userSearch: true,
+    groupMemberSearch: true,
     hideContactFromMembers: true,
     autoStartingName: true,
     pwaInstallable: true,

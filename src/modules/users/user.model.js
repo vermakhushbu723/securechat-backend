@@ -76,6 +76,8 @@ const userSchema = new Schema(
       restricted: { type: Boolean, default: false },
       restrictedUntil: { type: Date, default: null },
     },
+    // Admin Search Permissions: this user cannot search users (1-to-1) or group members.
+    searchBlocked: { type: Boolean, default: false },
     // Admin Security Settings, scope "User": overrides for this user (null = platform default).
     securityOverrides: { type: Schema.Types.Mixed, default: null },
   },
@@ -158,6 +160,7 @@ export function toSelfUser(u) {
       liveUntil: u.locationSettings?.liveUntil ?? null,
     },
     warnings: u.warnings ?? 0,
+    searchBlocked: Boolean(u.searchBlocked),
     createdAt: u.createdAt,
   };
 }

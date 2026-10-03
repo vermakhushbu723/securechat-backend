@@ -9,6 +9,7 @@ import { toObjectId } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
 import { SecureFile } from '../files/secureFile.model.js';
 import { LocationHistory } from '../location/location.model.js';
+import { memberSearchBlock } from '../moderation/searchPermission.service.js';
 import { getSetting } from '../platform/platform.service.js';
 import { getAccess, groupAccessBlock, groupPremiumInfo } from '../subscription/subscription.service.js';
 import {
@@ -99,6 +100,7 @@ async function detailDTO(groupId, userId) {
   const block = sendBlockReason({ ...g, settings: g.settings }, member, 'text') ?? planBlock;
   const mediaBlock = sendBlockReason({ ...g, settings: g.settings }, member, 'image') ?? planBlock;
   const premium = await groupPremiumInfo(g);
+  const searchBlocked = await memberSearchBlock(userId, g, member);
   return {
     ...summaryDTO(g, member, userId),
     rules: g.rules,
@@ -121,6 +123,9 @@ async function detailDTO(groupId, userId) {
       canOpenProtected: !planBlock,
       plan: (await getAccess(userId)).access,
       location: member.location ?? null,
+      // Search Permissions: can this user search the member list (reason when not).
+      canSearchMembers: !searchBlocked,
+      memberSearchBlockedReason: searchBlocked,
     },
   };
 }
@@ -353,7 +358,11 @@ function memberDTO(m, users, online, userId) {
 }
 
 export async function listMembers(userId, groupId, { q } = {}) {
-  await requireGroupAccess(groupId, userId, { allowSuspended: true });
+  const { group, member } = await requireGroupAccess(groupId, userId, { allowSuspended: true });
+  if (q?.trim()) {
+    const blocked = await memberSearchBlock(userId, group, member);
+    if (blocked) throw ApiError.forbidden(blocked, 'SEARCH_DISABLED');
+  }
   const rows = await GroupMember.find({ group: groupId, status: 'active' }).select('user role restricted restrictedUntil joinedAt location').limit(5000).lean();
   const [users, online] = await Promise.all([getPublicUsers(rows.map((r) => r.user)), onlineMap(rows.map((r) => r.user))]);
   const term = q?.trim().toLowerCase();

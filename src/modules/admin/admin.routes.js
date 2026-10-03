@@ -7,6 +7,7 @@ import { objectId } from '../../utils/validators.js';
 import { settingsInput } from '../groups/group.schema.js';
 import { adminDeleteChain, adminFreezeChain } from '../groups/groupMessage.service.js';
 import * as blocked from '../moderation/blockedTerm.service.js';
+import { testPhone } from '../moderation/phoneGuard.service.js';
 import { CONTENT_RULES, getSetting, updateSetting } from '../platform/platform.service.js';
 import { decideRequest, grantExtension, grantPremium, setAccess, setTrial } from '../subscription/subscription.service.js';
 import { setGroupPremium } from '../subscription/subscription.routes.js';
@@ -20,6 +21,7 @@ import * as content from './admin.content.js';
 import * as groups from './admin.groups.js';
 import { AUDIENCES, CHANNELS, STAFF_ROLES } from './admin.models.js';
 import * as reports from './admin.reports.js';
+import * as search from './admin.search.js';
 import * as subs from './admin.subscription.js';
 import * as system from './admin.system.js';
 import * as users from './admin.users.js';
@@ -477,6 +479,25 @@ adminRouter.post('/forward-chains/:id/freeze', can('messages'), validate({ param
   ok(res, data);
 });
 
+// Search Permissions: 1-to-1 user search + group member search (platform, user and group level).
+adminRouter.get('/search-permissions', can('users'), validate({ query: listQuery }), async (req, res) => ok(res, await search.overview(req.valid.query)));
+adminRouter.put('/search-permissions', can('users'), validate({ body: z.strictObject({ userSearch: bool, groupMemberSearch: bool }) }), async (req, res) => {
+  const data = await search.setGlobal(req.valid.body);
+  const what = Object.entries(req.valid.body).map(([k, v]) => `${k === 'userSearch' ? '1-to-1 user search' : 'Group member search'} ${v ? 'on' : 'off'}`).join(', ');
+  logAdmin(req, `Search permissions: ${what}`, 'settings', { target: 'Everyone', meta: req.valid.body });
+  ok(res, data);
+});
+adminRouter.post('/users/:id/search', can('users'), validate({ params: idParam, body: z.strictObject({ allowed: z.boolean() }) }), async (req, res) => {
+  const data = await search.setUserSearch(req.valid.params.id, req.valid.body.allowed);
+  logAdmin(req, req.valid.body.allowed ? 'Allowed search' : 'Turned off search', 'users', { target: data.name, targetId: data.id });
+  ok(res, data);
+});
+adminRouter.post('/groups/:id/member-search', can('groups'), validate({ params: idParam, body: z.strictObject({ enabled: z.boolean() }) }), async (req, res) => {
+  const data = await search.setGroupMemberSearch(req.valid.params.id, req.valid.body.enabled);
+  logAdmin(req, `Member search ${req.valid.body.enabled ? 'on' : 'off'}`, 'groups', { target: data.name, targetId: data.id });
+  ok(res, data);
+});
+
 // Blocked Keywords: words / sentences / links that cannot be sent in 1-to-1 chats or groups.
 adminRouter.get('/blocked-terms', can('messages'), validate({ query: listQuery.extend({ type: z.enum(['all', 'word', 'sentence', 'link', 'inactive']).optional() }) }), async (req, res) =>
   ok(res, await blocked.listTerms({ q: req.valid.query.q, type: req.valid.query.type, page: req.valid.query.page, limit: req.valid.query.limit })),
@@ -497,6 +518,8 @@ adminRouter.post(
     ok(res, data, 201);
   },
 );
+// Mobile number protection (always on): score + reasons for a sample message.
+adminRouter.post('/phone/test', can('messages'), validate({ body: z.strictObject({ text: z.string().max(4096) }) }), async (req, res) => ok(res, testPhone(req.valid.body.text)));
 adminRouter.post('/blocked-terms/test', can('messages'), validate({ body: z.strictObject({ text: z.string().max(4096) }) }), async (req, res) => ok(res, await blocked.testText(req.valid.body.text)));
 adminRouter.patch(
   '/blocked-terms/:id',
@@ -514,7 +537,7 @@ adminRouter.delete('/blocked-terms/:id', can('messages'), validate({ params: idP
   ok(res, data);
 });
 
-adminRouter.get('/moderation/log', can('messages'), validate({ query: listQuery.extend({ rule: z.enum(['all', 'keyword', ...CONTENT_RULES]).optional() }) }), async (req, res) =>
+adminRouter.get('/moderation/log', can('messages'), validate({ query: listQuery.extend({ rule: z.enum(['all', 'keyword', 'phone', ...CONTENT_RULES]).optional() }) }), async (req, res) =>
   ok(res, await content.blockedLog(req.valid.query)),
 );
 
@@ -548,6 +571,7 @@ const contentBody = z.strictObject({
   maxWarnings: z.number().int().min(1).max(50).optional(),
   muteAfter: z.number().int().min(0).max(50).optional(),
   suspendAfter: z.number().int().min(0).max(50).optional(),
+  phoneRestrictAfter: z.number().int().min(0).max(50).optional(),
 });
 
 adminRouter.get('/settings/content', can('messages'), async (_req, res) => ok(res, await content.getContent()));
@@ -676,6 +700,8 @@ const systemBody = z.strictObject({
   maxDevices: z.number().int().min(1).max(20).optional(),
   otpExpiryMin: z.number().int().min(1).max(30).optional(),
   directChat: bool,
+  userSearch: bool,
+  groupMemberSearch: bool,
   hideContactFromMembers: bool,
   autoStartingName: bool,
   pwaInstallable: bool,

@@ -30,15 +30,15 @@ const send = (p) => emit(sa, 'message:send', { toUserId: P.user.id, clientMsgId:
 
 await step('view once text: receiver sees a placeholder, opens it once', async () => {
   const got = waitFor(sp, 'message:new', (m) => m.viewOnce && m.senderId === A.user.id);
-  const r = await send({ text: 'Secret code 4 you', expiry: 'view_once' });
+  const r = await send({ text: 'Secret code for you', expiry: 'view_once' });
   const mine = r.message ?? r;
   eq(mine.viewOnce, true, 'view once');
-  eq(mine.text, 'Secret code 4 you', 'sender sees own text');
+  eq(mine.text, 'Secret code for you', 'sender sees own text');
   const theirs = await got;
   eq(theirs.withheld, true, 'receiver placeholder');
   eq(theirs.text, '', 'content hidden');
   const opened = await api('POST', `/messages/${mine.id}/open`, { token: P.accessToken });
-  eq(opened.text, 'Secret code 4 you', 'revealed on open');
+  eq(opened.text, 'Secret code for you', 'revealed on open');
   const again = await api('POST', `/messages/${mine.id}/open`, { token: P.accessToken }).catch((e) => e);
   eq(again.code, 'ALREADY_OPENED', 'only once');
   const list = await api('GET', `/conversations/${mine.conversationId}/messages?limit=5`, { token: P.accessToken });
@@ -69,7 +69,7 @@ await step('expiry 1 hour is stored; private text cannot be copied or forwarded'
 });
 
 await step('silent message is stored as silent', async () => {
-  const r = await send({ text: 'no ping', silent: true });
+  const r = await send({ text: 'quiet ping', silent: true });
   eq((r.message ?? r).silent, true, 'silent');
 });
 

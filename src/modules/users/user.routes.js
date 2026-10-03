@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { validate } from '../../middlewares/validate.js';
 import { objectId } from '../../utils/validators.js';
 import { uploadPath } from '../chat/chat.schema.js';
+import { searchPermission } from '../moderation/searchPermission.service.js';
 import * as users from './user.service.js';
 
 const schemas = {
@@ -66,6 +67,11 @@ router.post('/me/profile', validate({ body: schemas.completeProfile }), async (r
 router.post('/me/devices', validate({ body: schemas.device }), async (req, res) => {
   await users.registerDevice(req.user.id, req.valid.body);
   res.json({ ok: true, data: null });
+});
+
+// Search Permissions for this user (New chat / group members show the reason when off).
+router.get('/me/search-permission', async (req, res) => {
+  res.json({ ok: true, data: await searchPermission(req.user.id) });
 });
 
 router.get('/search', validate({ query: schemas.search }), async (req, res) => {

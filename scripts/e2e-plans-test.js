@@ -115,7 +115,7 @@ await step('1-to-1: private photo is encrypted, has no URL and opens with a toke
     toUserId: P.user.id,
     clientMsgId: clientId(),
     type: 'image',
-    text: 'Site plan - do not share',
+    text: 'Site plan - keep private',
     media: { secure: true, secureFileId: sec.secureFileId, mimeType: 'image/png', size: png.length, name: 'plan.png' },
     visibility: 'private',
   });
@@ -129,7 +129,7 @@ await step('1-to-1: private photo is encrypted, has no URL and opens with a toke
 
   const t = await api('POST', `/files/${dmFile}/token`, { token: P.accessToken });
   eq(t.senderName, A.user.displayName ?? 'Aman', 'sender name for the viewer');
-  eq(t.caption, 'Site plan - do not share', 'caption');
+  eq(t.caption, 'Site plan - keep private', 'caption');
   assert(t.sentAt, 'date & time');
   eq(t.screenshotProtection, true, 'screenshots blocked');
   const bytes = Buffer.from(await (await fetch(`${BASE_URL}${t.streamPath}`)).arrayBuffer());

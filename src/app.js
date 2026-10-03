@@ -95,6 +95,8 @@ export function createApp() {
         maintenanceMessage: sys.maintenanceMessage,
         minAppVersion: sys.minAppVersion,
         directChat: sys.directChat,
+        userSearch: sys.userSearch !== false,
+        groupMemberSearch: sys.groupMemberSearch !== false,
         openRegistration: sys.openRegistration,
         maxFileMb: sys.maxFileMb,
       },

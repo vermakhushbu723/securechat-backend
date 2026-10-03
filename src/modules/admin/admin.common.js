@@ -48,6 +48,7 @@ export function userRow(u, online = new Map()) {
     locationEnabled: (u.locationSettings?.mode ?? 'join') !== 'none',
     locationMode: u.locationSettings?.mode ?? 'join',
     restricted: isRestricted(u),
+    searchAllowed: !u.searchBlocked,
     moderation: u.moderation
       ? { reason: u.moderation.reason ?? null, at: u.moderation.at ?? null, by: u.moderation.by ?? null, suspendedUntil: u.moderation.suspendedUntil ?? null, restrictedUntil: u.moderation.restrictedUntil ?? null }
       : null,
@@ -62,7 +63,7 @@ export async function userRows(users) {
   return users.map((u) => userRow(u, online));
 }
 
-export const USER_FIELDS = 'name displayName username phone email avatarUrl accountType status subscription warnings locationSettings moderation lastSeenAt createdAt';
+export const USER_FIELDS = 'name displayName username phone email avatarUrl accountType status subscription warnings locationSettings moderation searchBlocked lastSeenAt createdAt';
 
 /**
  * Mongo filter for an access type (same rules as accessOf):
@@ -108,6 +109,7 @@ export function userFilter({ q, filter } = {}) {
   const f = (filter ?? 'all').toLowerCase();
   if (f === 'blocked') and.push({ status: { $in: ['blocked', 'suspended'] } });
   else if (f === 'suspended') and.push({ status: 'suspended' });
+  else if (f === 'search_off') and.push({ searchBlocked: true });
   else if (f === 'restricted') and.push({ $or: [{ 'moderation.restricted': true }, { 'moderation.restrictedUntil': { $gt: new Date() } }] });
   else if (f !== 'all') and.push(accessQuery(f));
   return { $and: and };

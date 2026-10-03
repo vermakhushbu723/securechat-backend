@@ -222,11 +222,9 @@ await step('location message', async () => {
   });
   eq((await onB).location.name, 'India Gate', 'location');
 });
-await step('contact card message', async () => {
-  const cmid = clientId();
-  const onA = waitFor(sA, 'message:new', (m) => m.clientMsgId === cmid);
-  await emit(sB, 'message:send', { conversationId: conv.id, clientMsgId: cmid, type: 'contact', contact: { name: 'Rahul', phone: '+911234567890' } });
-  eq((await onA).contact.name, 'Rahul', 'contact');
+await step('contact card with a phone number is refused (mobile number protection)', async () => {
+  const err = await emit(sB, 'message:send', { conversationId: conv.id, clientMsgId: clientId(), type: 'contact', contact: { name: 'Rahul', phone: '+911234567890' } }).catch((e) => e);
+  eq(err.code, 'CONTENT_BLOCKED', 'contact card refused');
 });
 await step('reply (quoted message)', async () => {
   const cmid = clientId();
