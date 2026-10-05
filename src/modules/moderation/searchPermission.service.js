@@ -14,7 +14,7 @@ export const SEARCH_OFF_USER = 'The SecureChat team turned off search for your a
 export const SEARCH_OFF_GROUP = 'The group admin turned off member search in this group.';
 
 export async function searchPermission(userId) {
-  const [sys, u] = await Promise.all([getSetting('system'), User.findById(userId).select('searchBlocked').lean()]);
+  const [sys, u] = await Promise.all([getSetting('system'), User.findById(userId).select('searchBlocked searchHidden').lean()]);
   const blocked = Boolean(u?.searchBlocked);
   const users = sys.userSearch !== false && !blocked;
   const members = sys.groupMemberSearch !== false && !blocked;
@@ -24,6 +24,8 @@ export async function searchPermission(userId) {
     members,
     usersReason: reason(users, sys.userSearch),
     membersReason: reason(members, sys.groupMemberSearch),
+    // Others can not find this user (admin "Hide from search").
+    hiddenFromSearch: Boolean(u?.searchHidden),
   };
 }
 

@@ -1,4 +1,8 @@
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// name@domain.tld: letters / digits / . _ % + - before the @, a real top level domain after it.
+export const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
+
+/** Login / register mobile number: Indian 10 digit number (6-9 first), stored as +91XXXXXXXXXX. */
+export const isIndianMobile = (value) => /^\+91[6-9]\d{9}$/.test(value);
 
 /**
  * Login field: mobile number or email ID.

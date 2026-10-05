@@ -120,6 +120,33 @@ await step('platform admin turns the group member search back on', async () => {
   eq((await members(B, 'Alpha')).length, 1, 'member can search again');
 });
 
+await step('admin hides a user from search: nobody finds them (1-to-1 or group members)', async () => {
+  await admin('POST', `/users/${B.user.id}/search-visibility`, { hidden: true });
+  const r = await searchFor(A);
+  assert(!r.some((u) => u.id === B.user.id), 'B not in 1-to-1 search');
+  eq((await members(A, 'Beta')).length, 0, 'B not in group member search');
+  eq((await members(A)).length, 2, 'still listed as a member');
+  await fails(api('PATCH', '/users/me', { token: B.accessToken, body: { privacy: { searchable: true } } }), 'SEARCH_HIDDEN', 'B cannot undo it');
+  const p = await api('GET', '/users/me/search-permission', { token: B.accessToken });
+  eq(p.hiddenFromSearch, true, 'B sees it');
+  const o = await admin('GET', '/search-permissions');
+  assert(o.hidden.items.some((u) => u.id === B.user.id), 'listed for the admin');
+  await admin('POST', `/users/${B.user.id}/search-visibility`, { hidden: false });
+  await api('PATCH', '/users/me', { token: B.accessToken, body: { privacy: { searchable: true } } });
+  assert((await searchFor(A)).some((u) => u.id === B.user.id), 'found again');
+});
+
+await step('login / register validation: 10 digit mobile number, real email, 6 digit code', async () => {
+  for (const phone of ['12345', '5876543210', '+447911123456']) {
+    await fails(api('POST', '/auth/otp/request', { body: { phone, email: 'valid@example.org' } }), 'BAD_REQUEST', `mobile ${phone}`);
+  }
+  for (const email of ['abc@gmail', 'a b@gmail.com']) {
+    await fails(api('POST', '/auth/otp/request', { body: { phone: '9876501234', email } }), 'BAD_REQUEST', `email ${email}`);
+  }
+  await fails(api('POST', '/auth/otp/verify', { body: { phone: '9876501234', email: 'valid@example.org', code: '12ab56' } }), 'BAD_REQUEST', 'code');
+  await fails(api('POST', '/admin/auth/login', { body: { email: 'not-an-email', password: 'x' } }), 'BAD_REQUEST', 'admin email');
+});
+
 // ------------------------------------------------------------------ mobile number protection
 let conv;
 const dm = (s, c, text) => api('POST', `/conversations/${c.id}/messages`, { token: s.accessToken, body: { clientMsgId: clientId(), type: 'text', text } });

@@ -492,6 +492,11 @@ adminRouter.post('/users/:id/search', can('users'), validate({ params: idParam, 
   logAdmin(req, req.valid.body.allowed ? 'Allowed search' : 'Turned off search', 'users', { target: data.name, targetId: data.id });
   ok(res, data);
 });
+adminRouter.post('/users/:id/search-visibility', can('users'), validate({ params: idParam, body: z.strictObject({ hidden: z.boolean() }) }), async (req, res) => {
+  const data = await search.setUserHidden(req.valid.params.id, req.valid.body.hidden);
+  logAdmin(req, req.valid.body.hidden ? 'Hid user from search' : 'Showed user in search again', 'users', { target: data.name, targetId: data.id });
+  ok(res, data);
+});
 adminRouter.post('/groups/:id/member-search', can('groups'), validate({ params: idParam, body: z.strictObject({ enabled: z.boolean() }) }), async (req, res) => {
   const data = await search.setGroupMemberSearch(req.valid.params.id, req.valid.body.enabled);
   logAdmin(req, `Member search ${req.valid.body.enabled ? 'on' : 'off'}`, 'groups', { target: data.name, targetId: data.id });

@@ -31,6 +31,10 @@ export async function updateMe(userId, patch) {
   }
   if (patch.privacy?.lastSeen) set['privacy.lastSeen'] = patch.privacy.lastSeen;
   if (patch.privacy?.readReceipts !== undefined) set['privacy.readReceipts'] = patch.privacy.readReceipts;
+  if (patch.privacy?.searchable === true) {
+    const cur = await User.findById(userId).select('searchHidden').lean();
+    if (cur?.searchHidden) throw ApiError.forbidden('The SecureChat team hid your profile from search.', 'SEARCH_HIDDEN');
+  }
   if (patch.privacy?.searchable !== undefined) set['privacy.searchable'] = patch.privacy.searchable;
   if (patch.privacy?.showContact !== undefined) set['privacy.showContact'] = patch.privacy.showContact;
 
@@ -84,6 +88,7 @@ export async function search(userId, q, limit) {
     _id: { $ne: userId },
     status: 'active',
     'privacy.searchable': { $ne: false },
+    searchHidden: { $ne: true }, // hidden from search by the admin
     $or: or,
   })
     .select('name displayName username avatarUrl about lastSeenAt privacy accountType businessAddress phone email')

@@ -13,6 +13,11 @@ export async function overview(query) {
   const userFilter = { searchBlocked: true, status: { $ne: 'deleted' } };
   if (query.q?.trim()) userFilter.$or = [{ name: like(query.q) }, { phone: like(query.q) }, { email: like(query.q) }];
   const groupFilter = { status: { $ne: 'deleted' }, 'settings.members.memberSearch': false };
+  const hiddenFilter = { searchHidden: true, status: { $ne: 'deleted' } };
+  const [hidden, hiddenTotal] = await Promise.all([
+    User.find(hiddenFilter).select(USER_FIELDS).sort({ updatedAt: -1 }).limit(100).lean(),
+    User.countDocuments(hiddenFilter),
+  ]);
   const [sys, users, usersTotal, groups, groupsTotal] = await Promise.all([
     getSetting('system'),
     User.find(userFilter).select(USER_FIELDS).sort({ updatedAt: -1 }).skip(p.skip).limit(p.limit).lean(),
@@ -24,6 +29,7 @@ export async function overview(query) {
   return {
     global: { userSearch: sys.userSearch !== false, groupMemberSearch: sys.groupMemberSearch !== false },
     users: pageResult(await userRows(users), usersTotal, p),
+    hidden: { total: hiddenTotal, items: await userRows(hidden) },
     groups: {
       total: groupsTotal,
       items: groups.map((g) => ({
@@ -48,6 +54,15 @@ export async function setUserSearch(userId, allowed) {
   await invalidateUser(userId);
   emitToUser(String(userId), 'user:updated', toSelfUser(u));
   return { id: String(u._id), name: u.name, internalId: internalId(u._id), searchAllowed: allowed };
+}
+
+/** Hide a user from every search (1-to-1 and group members). */
+export async function setUserHidden(userId, hidden) {
+  const u = await User.findByIdAndUpdate(userId, { $set: { searchHidden: hidden, ...(hidden ? { 'privacy.searchable': false } : {}) } }, { returnDocument: 'after', lean: true });
+  if (!u) throw ApiError.notFound('User not found');
+  await invalidateUser(userId);
+  emitToUser(String(userId), 'user:updated', toSelfUser(u));
+  return { id: String(u._id), name: u.name, internalId: internalId(u._id), hidden };
 }
 
 export async function setGroupMemberSearch(groupId, enabled) {

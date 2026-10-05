@@ -5,9 +5,13 @@ import { limiters, rateLimit } from '../../middlewares/rateLimit.js';
 import { validate } from '../../middlewares/validate.js';
 import { audit } from '../audit/audit.service.js';
 import * as auth from './auth.service.js';
-import { normalizeIdentifier } from './identifier.js';
+import { isIndianMobile, normalizeIdentifier } from './identifier.js';
 
-const phone = z.string().trim().regex(/^\+?[0-9]{8,15}$/, 'Invalid phone number');
+// 10 digit Indian mobile number (optionally with +91 / 91 / 0 in front).
+const phone = z
+  .string()
+  .trim()
+  .refine((v) => normalizeIdentifier(v)?.kind === 'phone' && isIndianMobile(normalizeIdentifier(v).value), 'Enter a valid 10 digit mobile number');
 const password = z.string().min(8, 'Password must be at least 8 characters').max(128);
 
 const schemas = {
@@ -61,12 +65,16 @@ function toTarget(b, ctx) {
   if (b.phone && b.email) {
     const p = normalizeIdentifier(b.phone);
     const e = normalizeIdentifier(b.email);
-    if (p?.kind !== 'phone') ctx.addIssue({ code: 'custom', path: ['phone'], message: 'Enter a valid mobile number' });
+    if (p?.kind !== 'phone' || !isIndianMobile(p.value)) ctx.addIssue({ code: 'custom', path: ['phone'], message: 'Enter a valid 10 digit mobile number' });
     if (e?.kind !== 'email') ctx.addIssue({ code: 'custom', path: ['email'], message: 'Enter a valid email ID' });
-    if (p?.kind !== 'phone' || e?.kind !== 'email') return z.NEVER;
+    if (p?.kind !== 'phone' || !isIndianMobile(p.value) || e?.kind !== 'email') return z.NEVER;
     return { kind: 'pair', phone: p.value, email: e.value, value: `${p.value}|${e.value}` };
   }
   const id = normalizeIdentifier(b.identifier ?? b.phone ?? b.email);
+  if (id?.kind === 'phone' && !isIndianMobile(id.value)) {
+    ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid 10 digit mobile number' });
+    return z.NEVER;
+  }
   if (!id) {
     ctx.addIssue({ code: 'custom', path: ['identifier'], message: 'Enter a valid mobile number or email ID' });
     return z.NEVER;

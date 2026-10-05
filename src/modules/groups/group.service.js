@@ -366,9 +366,11 @@ export async function listMembers(userId, groupId, { q } = {}) {
   const rows = await GroupMember.find({ group: groupId, status: 'active' }).select('user role restricted restrictedUntil joinedAt location').limit(5000).lean();
   const [users, online] = await Promise.all([getPublicUsers(rows.map((r) => r.user)), onlineMap(rows.map((r) => r.user))]);
   const term = q?.trim().toLowerCase();
+  // Members hidden from search by the admin never show in search results (the full list still does).
+  const hidden = term ? new Set((await User.find({ _id: { $in: rows.map((r) => r.user) }, searchHidden: true }).select('_id').lean()).map((u) => String(u._id))) : new Set();
   return rows
     .map((r) => memberDTO(r, users, online, userId))
-    .filter((m) => !term || m.displayName.toLowerCase().includes(term))
+    .filter((m) => !term || (m.displayName.toLowerCase().includes(term) && (m.isMe || !hidden.has(m.userId))))
     .sort((a, b) => (a.isMe !== b.isMe ? (a.isMe ? -1 : 1) : ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.displayName.localeCompare(b.displayName)));
 }
 
