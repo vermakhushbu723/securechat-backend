@@ -46,6 +46,8 @@ const schema = z.object({
   SMTP_FROM: z.string().default(''),
   // Sender name on every email (the address is the mailbox that sends it).
   MAIL_FROM_NAME: z.string().default('SecureChat'),
+  // Google Maps JavaScript API key (admin System Settings can override it).
+  GOOGLE_MAPS_API_KEY: z.string().default(''),
   // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
   ADMIN_API_KEY: z.string().default(''),
   // Admin panel 2-step code: a fixed 6 digit code instead of a random one (empty = random code by email).

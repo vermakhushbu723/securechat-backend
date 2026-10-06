@@ -83,6 +83,9 @@ export const SETTING_DEFAULTS = {
     // Search Permissions: 1-to-1 user search and group member search for everyone.
     userSearch: true,
     groupMemberSearch: true,
+    // Google Maps in the apps (key empty = GOOGLE_MAPS_API_KEY from .env).
+    mapsEnabled: true,
+    mapsApiKey: '',
     hideContactFromMembers: true,
     autoStartingName: true,
     pwaInstallable: true,

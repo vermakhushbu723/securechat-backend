@@ -24,6 +24,7 @@ import {
   streamSecureFile,
 } from './modules/groups/group.routes.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
+import { mapEmbed } from './modules/maps/maps.embed.js';
 import { activeTerms } from './modules/moderation/blockedTerm.service.js';
 import { getSetting } from './modules/platform/platform.service.js';
 import { subscriptionRouter } from './modules/subscription/subscription.routes.js';
@@ -99,9 +100,12 @@ export function createApp() {
         groupMemberSearch: sys.groupMemberSearch !== false,
         openRegistration: sys.openRegistration,
         maxFileMb: sys.maxFileMb,
+        maps: Boolean(sys.mapsEnabled !== false && (sys.mapsApiKey || env.GOOGLE_MAPS_API_KEY)),
       },
     });
   });
+  // Google Maps page shown inside the apps (iframe on web, WebView on Android).
+  api.get('/maps/embed', mapEmbed);
   // Maintenance mode (admin System Settings): the app API answers 503 until it is turned off.
   api.use(async (_req, _res, next) => {
     const sys = await getSetting('system');

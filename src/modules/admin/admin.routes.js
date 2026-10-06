@@ -708,6 +708,8 @@ const systemBody = z.strictObject({
   directChat: bool,
   userSearch: bool,
   groupMemberSearch: bool,
+  mapsEnabled: bool,
+  mapsApiKey: z.string().trim().max(200).regex(/^[A-Za-z0-9_-]*$/, 'Invalid API key').optional(),
   hideContactFromMembers: bool,
   autoStartingName: bool,
   pwaInstallable: bool,
