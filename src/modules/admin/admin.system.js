@@ -8,6 +8,7 @@ import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { redis } from '../../db/redis.js';
 import { mailEnabled, sendNoticeEmail } from '../../services/mail.service.js';
+import { poolStatus } from '../mail/mail.pool.js';
 import { enqueueBroadcast, queueCounts } from '../../services/queue.service.js';
 import { emitToUsers, getIO } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -47,7 +48,7 @@ async function deliver(n) {
     if (n.channels.includes('in_app')) emitToUsers(ids, 'admin:notice', payload);
     if (n.channels.includes('push')) await enqueueBroadcast(ids, { notificationId: String(n._id), title: n.title, body: n.body });
     if (n.channels.includes('email')) {
-      if (!mailEnabled()) skipped.push('email');
+      if (!(await mailEnabled())) skipped.push('email');
       else {
         for (const u of users.filter((x) => x.email)) {
           try {
@@ -266,6 +267,9 @@ export async function systemHealth() {
   for (let i = 0; i < 200; i++) checkContent(sample, { enabled: ['abuse', 'numbers', 'numberWords', 'spam', 'links', 'personalInfo', 'externalContact'], abuseWords: cs.abuseWords, hinglish: cs.hinglish, misspellings: cs.misspellings });
   const perMessage = Number(process.hrtime.bigint() - t) / 1e6 / 200;
   const io = getIO();
+  const mailOn = await mailEnabled();
+  const mailboxes = mailOn ? await poolStatus().catch(() => []) : [];
+  const ready = mailboxes.filter((m) => m.status === 'Ready').length;
   const waiting = queue ? queue.waiting + queue.delayed : null;
   const mb = storage ? storage.bytes / 1024 / 1024 : null;
   return {
@@ -284,7 +288,11 @@ export async function systemHealth() {
         status: waiting == null ? 'Unknown' : waiting > 1000 || (queue?.failed ?? 0) > 100 ? 'Degraded' : 'Healthy',
         metric: queue ? `${waiting} waiting, ${queue.failed} failed` : 'Not available',
       },
-      { name: 'Email (SMTP)', status: mailEnabled() ? 'Healthy' : 'Not configured', metric: mailEnabled() ? env.SMTP_HOST : 'OTP codes shown in test mode' },
+      {
+        name: 'Email (mailbox pool)',
+        status: !mailOn ? 'Not configured' : mailboxes.length && ready === 0 ? 'Down' : ready < mailboxes.length ? 'Degraded' : 'Healthy',
+        metric: !mailOn ? 'OTP codes shown in test mode' : mailboxes.length ? `${ready} of ${mailboxes.length} mailboxes ready` : env.SMTP_HOST,
+      },
     ],
   };
 }

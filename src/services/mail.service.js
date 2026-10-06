@@ -1,32 +1,22 @@
-import nodemailer from 'nodemailer';
-
-import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { mailEnabled as poolEnabled, sendFromPool } from '../modules/mail/mail.pool.js';
 
-let transport = null;
+/**
+ * Outgoing email (OTP codes, admin notices) through the mailbox pool
+ * (admin panel -> Email Accounts, or SMTP_HOST / SMTP_USER / SMTP_PASS in .env).
+ * Without any mailbox the OTP is only logged (and returned in OTP_DEV_MODE).
+ */
+export const mailEnabled = () => poolEnabled();
 
-/** SMTP is optional: without SMTP_HOST the OTP is only logged (and returned in OTP_DEV_MODE). */
-export const mailEnabled = () => Boolean(env.SMTP_HOST);
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-function getTransport() {
-  if (!transport) {
-    transport = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_PORT === 465,
-      auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
-    });
-  }
-  return transport;
-}
-
+/** true = sent, false = no mailbox configured; throws 503 EMAIL_UNAVAILABLE when every mailbox failed. */
 export async function sendOtpEmail(to, code) {
-  if (!mailEnabled()) {
-    logger.info({ to }, 'SMTP not configured - OTP email not sent');
+  if (!(await poolEnabled())) {
+    logger.info({ to }, 'No mailbox configured - OTP email not sent');
     return false;
   }
-  await getTransport().sendMail({
-    from: env.SMTP_FROM || env.SMTP_USER,
+  await sendFromPool({
     to,
     subject: `${code} is your SecureChat code`,
     text: `Your SecureChat verification code is ${code}. It expires in 5 minutes. Do not share it with anyone.`,
@@ -40,13 +30,10 @@ export async function sendOtpEmail(to, code) {
   return true;
 }
 
-const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
 /** Admin broadcast (Notifications screen, channel "Email"). */
 export async function sendNoticeEmail(to, title, body) {
-  if (!mailEnabled()) return false;
-  await getTransport().sendMail({
-    from: env.SMTP_FROM || env.SMTP_USER,
+  if (!(await poolEnabled())) return false;
+  await sendFromPool({
     to,
     subject: title,
     text: body,

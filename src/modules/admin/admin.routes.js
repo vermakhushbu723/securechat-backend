@@ -19,6 +19,7 @@ import * as authSvc from './admin.auth.js';
 import { can, logAdmin, requireStaff, superAdminOnly } from './admin.auth.js';
 import * as content from './admin.content.js';
 import * as groups from './admin.groups.js';
+import * as mail from './admin.mail.js';
 import { AUDIENCES, CHANNELS, STAFF_ROLES } from './admin.models.js';
 import * as reports from './admin.reports.js';
 import * as search from './admin.search.js';
@@ -725,4 +726,47 @@ adminRouter.put('/settings/system', can('settings'), validate({ body: systemBody
   logAdmin(req, req.valid.body.maintenance === undefined ? 'Changed system settings' : `Maintenance mode ${req.valid.body.maintenance ? 'on' : 'off'}`, 'settings', { meta: req.valid.body });
   ok(res, data);
 });
+// Email Accounts: mailbox pool for OTP codes and notices (rotation + failover).
+adminRouter.get('/mail-accounts', can('settings'), async (_req, res) => ok(res, await mail.listAccounts()));
+adminRouter.post(
+  '/mail-accounts',
+  can('settings'),
+  validate({
+    body: z.strictObject({
+      accounts: z.array(z.strictObject({ email: z.string().trim().toLowerCase().email().max(120), password: z.string().min(1).max(200) })).min(1).max(100),
+      host: z.string().trim().min(3).max(120).default('smtp.hostinger.com'),
+      port: z.number().int().min(1).max(65535).default(465), // Hostinger: 465 (SSL) or 587 (STARTTLS)
+      dailyLimit: z.number().int().min(1).max(100_000).default(500),
+    }),
+  }),
+  async (req, res) => {
+    const { accounts, ...opts } = req.valid.body;
+    const data = await mail.addAccounts(accounts, opts);
+    logAdmin(req, `Email accounts: ${data.added.length} added, ${data.updated.length} updated`, 'settings', { target: [...data.added, ...data.updated].join(', ').slice(0, 200) });
+    ok(res, data, 201);
+  },
+);
+adminRouter.patch(
+  '/mail-accounts/:id',
+  can('settings'),
+  validate({
+    params: idParam,
+    body: z.strictObject({ active: bool, dailyLimit: z.number().int().min(1).max(100_000).optional(), password: z.string().min(1).max(200).optional(), host: z.string().trim().min(3).max(120).optional(), port: z.number().int().min(1).max(65535).optional() }),
+  }),
+  async (req, res) => {
+    const data = await mail.updateAccount(req.valid.params.id, req.valid.body);
+    logAdmin(req, req.valid.body.password ? 'Changed mailbox password' : 'Edited mailbox', 'settings', { target: data.email, targetId: data.id });
+    ok(res, data);
+  },
+);
+adminRouter.delete('/mail-accounts/:id', can('settings'), validate({ params: idParam }), async (req, res) => {
+  const data = await mail.deleteAccount(req.valid.params.id);
+  logAdmin(req, 'Removed mailbox', 'settings', { target: data.email, targetId: req.valid.params.id });
+  ok(res, data);
+});
+adminRouter.post('/mail-accounts/:id/test', can('settings'), validate({ params: idParam, body: z.strictObject({ to: z.string().trim().toLowerCase().email().max(120) }) }), async (req, res) =>
+  ok(res, await mail.sendTest(req.valid.params.id, req.valid.body.to)),
+);
+adminRouter.post('/mail-accounts/:id/ready', can('settings'), validate({ params: idParam }), async (req, res) => ok(res, await mail.makeReady(req.valid.params.id)));
+
 adminRouter.get('/system/health', can('settings'), async (_req, res) => ok(res, await system.systemHealth()));

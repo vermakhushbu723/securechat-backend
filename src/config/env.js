@@ -44,6 +44,8 @@ const schema = z.object({
   SMTP_USER: z.string().default(''),
   SMTP_PASS: z.string().default(''),
   SMTP_FROM: z.string().default(''),
+  // Sender name on every email (the address is the mailbox that sends it).
+  MAIL_FROM_NAME: z.string().default('SecureChat'),
   // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
   ADMIN_API_KEY: z.string().default(''),
   // Admin panel 2-step code: a fixed 6 digit code instead of a random one (empty = random code by email).

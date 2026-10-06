@@ -142,13 +142,23 @@ export async function requestOtp(target) {
   await redis.set(otpKey(value), JSON.stringify({ h: hash(code).toString('hex'), a: 0 }), 'EX', OTP_TTL);
   // Mobile + email login: the code goes to the email. (Plug an SMS provider here for phone-only login.)
   const emailTo = kind === 'pair' ? target.email : kind === 'email' ? value : null;
-  const emailed = emailTo ? await sendOtpEmail(emailTo, code) : false;
+  let emailed = false;
+  if (emailTo) {
+    try {
+      emailed = await sendOtpEmail(emailTo, code);
+    } catch (err) {
+      // Every mailbox failed: no code was delivered, so none stays valid.
+      await redis.del(otpKey(value));
+      throw err;
+    }
+  }
   return {
     kind: kind === 'pair' ? 'email' : kind,
     sentTo: emailTo ?? value,
     emailed,
     expiresIn: OTP_TTL,
-    ...(env.OTP_DEV_MODE ? { devCode: code } : {}),
+    // Test mode only while no email is sent (no mailbox set up yet).
+    ...(env.OTP_DEV_MODE && !emailed ? { devCode: code } : {}),
   };
 }
 

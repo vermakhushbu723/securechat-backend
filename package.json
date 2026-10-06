@@ -22,7 +22,8 @@
     "test:admin": "node scripts/e2e-admin-test.js",
     "test:keywords": "node scripts/e2e-keywords-test.js",
     "test:search-phone": "node scripts/e2e-search-phone-test.js",
-    "test:phone-unit": "node scripts/phone-guard-unit-test.js"
+    "test:phone-unit": "node scripts/phone-guard-unit-test.js",
+    "test:mail": "node scripts/e2e-mail-test.js"
   },
   "author": "",
   "license": "UNLICENSED",
@@ -49,6 +50,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "smtp-server": "^3.19.17",
     "socket.io-client": "^4.8.3"
   },
   "engines": {
