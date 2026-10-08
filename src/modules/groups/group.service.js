@@ -9,6 +9,7 @@ import { toObjectId } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
 import { SecureFile } from '../files/secureFile.model.js';
 import { LocationHistory } from '../location/location.model.js';
+import { seedMemberLocations } from '../location/location.service.js';
 import { memberSearchBlock } from '../moderation/searchPermission.service.js';
 import { getSetting } from '../platform/platform.service.js';
 import { getAccess, groupAccessBlock, groupPremiumInfo } from '../subscription/subscription.service.js';
@@ -33,7 +34,8 @@ import { pointerAt, postSystemMessage, recomputePointers } from './groupMessage.
 
 const ROLE_ORDER = { owner: 0, admin: 1, member: 2 };
 const FOREVER = new Date('9999-12-31T00:00:00Z');
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+// Letters only: a code with digits looks like a phone number and the number protection strips it.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 
 // ===========================================================================
 // DTOs
@@ -101,6 +103,16 @@ async function detailDTO(groupId, userId) {
   const mediaBlock = sendBlockReason({ ...g, settings: g.settings }, member, 'image') ?? planBlock;
   const premium = await groupPremiumInfo(g);
   const searchBlocked = await memberSearchBlock(userId, g, member);
+  // Group admins: who is waiting for approval (shown in the chat header).
+  let pendingRequests = null;
+  if (isAdmin(member)) {
+    const [count, rows] = await Promise.all([
+      GroupMember.countDocuments({ group: groupId, status: 'pending' }),
+      GroupMember.find({ group: groupId, status: 'pending' }).sort({ requestedAt: 1 }).limit(3).select('user').lean(),
+    ]);
+    const users = await getPublicUsers(rows.map((r) => r.user));
+    pendingRequests = { count, names: rows.map((r) => users.get(String(r.user))?.displayName ?? 'Member') };
+  }
   return {
     ...summaryDTO(g, member, userId),
     rules: g.rules,
@@ -126,6 +138,8 @@ async function detailDTO(groupId, userId) {
       // Search Permissions: can this user search the member list (reason when not).
       canSearchMembers: !searchBlocked,
       memberSearchBlockedReason: searchBlocked,
+      // Admins only: { count, names } of pending join requests; null for members.
+      pendingRequests,
     },
   };
 }
@@ -136,8 +150,14 @@ async function detailDTO(groupId, userId) {
 function newCode(name) {
   const prefix = (name.toUpperCase().replace(/[^A-Z]/g, '') + 'GRP').slice(0, 3);
   let rand = '';
-  for (let i = 0; i < 6; i++) rand += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  for (let i = 0; i < 7; i++) rand += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   return `${prefix}-${rand}`;
+}
+
+/** Invite by code - also the old code with digits of a link created before codes became letters only. */
+export function findInvite(code) {
+  const c = String(code).trim().toUpperCase();
+  return InviteLink.findOne({ $or: [{ code: c }, { legacyCode: c }] }).lean();
 }
 
 export async function createInvite(groupId, name, userId, { expiry = '24h', maxJoins = 100, requireApproval = false } = {}) {
@@ -289,6 +309,8 @@ export async function updateGroupSettings(userId, groupId, settings) {
   if (!Object.keys(set).length) throw ApiError.badRequest('Nothing to update');
   await Group.updateOne({ _id: groupId }, { $set: set });
   await invalidateGroup(groupId);
+  // Location turned on: members who already share location show up at once.
+  if (set['settings.location.requirement'] && set['settings.location.requirement'] !== 'off') await seedMemberLocations(groupId);
   audit(userId, 'group_settings_updated', { group: groupId, meta: set });
   emitToGroup(groupId, 'group:updated', { groupId: String(groupId) });
   return detailDTO(groupId, userId);
@@ -387,7 +409,9 @@ export async function memberProfile(userId, groupId, targetId) {
   ]);
   const dto = memberDTO(m, users, online, userId);
   const vis = group.settings.location.visibility;
-  const canSeeLocation = !blockedMe && vis !== 'nobody' && (vis === 'groupMembers' || isAdmin(me)) && dto.locationShared;
+  // Group admin (or every member when the group shows locations to members) sees the member's location.
+  const allowedLocation = !blockedMe && group.settings.location.requirement !== 'off' && vis !== 'nobody' && (vis === 'groupMembers' || isAdmin(me));
+  const canSeeLocation = allowedLocation && dto.locationShared;
   return {
     ...dto,
     online: blockedMe ? false : dto.online,
@@ -402,11 +426,15 @@ export async function memberProfile(userId, groupId, targetId) {
     isBlocked: blocked,
     sharedMediaCount: sharedMedia,
     location: canSeeLocation ? m.location : null,
+    // You may see this member's location (false = group setting hides it); location null = not shared yet.
+    canSeeLocation: allowedLocation,
     canManage: isAdmin(me) && m.role !== 'owner' && !(m.role === 'admin' && me.role !== 'owner') && String(targetId) !== String(userId),
   };
 }
 
 export async function activateMember(groupId, targetUserId, actorId) {
+  // Group uses location: the member's last known position, so admins see it right away.
+  await seedMemberLocations(groupId, [targetUserId]);
   await Promise.all([invalidateMembership(groupId, targetUserId), invalidateGroup(groupId)]);
   joinGroupRoom(targetUserId, groupId);
   await recomputePointers(groupId, { emit: false });
@@ -522,6 +550,7 @@ export async function decideJoinRequest(userId, groupId, targetId, approve) {
     await GroupMember.deleteOne({ _id: pending._id });
     await invalidateMembership(groupId, targetId);
     emitToUser(targetId, 'group:request:declined', { groupId: String(groupId), groupName: g.name });
+    emitToUsers(await adminIds(groupId), 'group:join_request', { groupId: String(groupId), decided: true });
     audit(userId, 'join_declined', { group: groupId, target: targetId });
     return { approved: false };
   }
@@ -542,6 +571,7 @@ export async function decideJoinRequest(userId, groupId, targetId, approve) {
   );
   await Group.updateOne({ _id: groupId }, { $inc: { memberCount: 1 } });
   await activateMember(groupId, targetId, userId);
+  emitToUsers(await adminIds(groupId), 'group:join_request', { groupId: String(groupId), decided: true });
   const [actor, subject] = await Promise.all([getPublicUser(userId), getPublicUser(targetId)]);
   await postSystemMessage(groupId, userId, 'approved', `${actor?.displayName} approved ${subject?.displayName}`, targetId);
   audit(userId, 'join_approved', { group: groupId, target: targetId });
@@ -567,7 +597,7 @@ export async function newInvite(userId, groupId, options) {
 
 export async function revokeInvite(userId, groupId, code) {
   await requireGroupAccess(groupId, userId, { admin: true, allowSuspended: true });
-  const r = await InviteLink.updateOne({ group: groupId, code, status: 'active' }, { $set: { status: 'revoked', revokedAt: new Date() } });
+  const r = await InviteLink.updateOne({ group: groupId, $or: [{ code }, { legacyCode: code }], status: 'active' }, { $set: { status: 'revoked', revokedAt: new Date() } });
   if (!r.matchedCount) throw ApiError.notFound('Invite link not found');
   audit(userId, 'invite_revoked', { group: groupId, meta: { code } });
   return { revoked: true };
@@ -591,7 +621,7 @@ function assertInviteUsable(link) {
 }
 
 export async function invitePreview(code, viewerId = null) {
-  const link = await InviteLink.findOne({ code: code.toUpperCase() }).lean();
+  const link = await findInvite(code);
   if (!link) throw ApiError.notFound('Invite link not found');
   const g = await Group.findById(link.group).lean();
   if (!g || g.status === 'deleted') throw ApiError.notFound('Group not found');
@@ -681,7 +711,7 @@ function joinPermissions(g, link) {
 }
 
 export async function joinByInvite(userId, code, { location, shareMode }) {
-  const link = await InviteLink.findOne({ code: code.toUpperCase() }).lean();
+  const link = await findInvite(code);
   if (!link) throw ApiError.notFound('Invite link not found');
   const g = await Group.findById(link.group).lean();
   if (!g || g.status !== 'active') throw ApiError.forbidden('This group is not available', 'GROUP_UNAVAILABLE');

@@ -578,6 +578,7 @@ const contentBody = z.strictObject({
   muteAfter: z.number().int().min(0).max(50).optional(),
   suspendAfter: z.number().int().min(0).max(50).optional(),
   phoneRestrictAfter: z.number().int().min(0).max(50).optional(),
+  groupLinksBlocked: bool,
 });
 
 adminRouter.get('/settings/content', can('messages'), async (_req, res) => ok(res, await content.getContent()));
@@ -753,7 +754,7 @@ adminRouter.patch(
   can('settings'),
   validate({
     params: idParam,
-    body: z.strictObject({ active: bool, dailyLimit: z.number().int().min(1).max(100_000).optional(), password: z.string().min(1).max(200).optional(), host: z.string().trim().min(3).max(120).optional(), port: z.number().int().min(1).max(65535).optional() }),
+    body: z.strictObject({ email: z.string().trim().toLowerCase().email().max(120).optional(), active: bool, dailyLimit: z.number().int().min(1).max(100_000).optional(), password: z.string().min(1).max(200).optional(), host: z.string().trim().min(3).max(120).optional(), port: z.number().int().min(1).max(65535).optional() }),
   }),
   async (req, res) => {
     const data = await mail.updateAccount(req.valid.params.id, req.valid.body);
@@ -761,6 +762,12 @@ adminRouter.patch(
     ok(res, data);
   },
 );
+// One password for every mailbox (Hostinger mailboxes created with the same password).
+adminRouter.post('/mail-accounts/password-all', can('settings'), validate({ body: z.strictObject({ password: z.string().min(1).max(200) }) }), async (req, res) => {
+  const data = await mail.setPasswordAll(req.valid.body.password);
+  logAdmin(req, `Changed the password of ${data.updated} mailboxes`, 'settings');
+  ok(res, data);
+});
 adminRouter.delete('/mail-accounts/:id', can('settings'), validate({ params: idParam }), async (req, res) => {
   const data = await mail.deleteAccount(req.valid.params.id);
   logAdmin(req, 'Removed mailbox', 'settings', { target: data.email, targetId: req.valid.params.id });

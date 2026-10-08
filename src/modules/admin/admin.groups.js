@@ -72,8 +72,9 @@ export async function listGroups(query) {
   const p = paged(query);
   let filter = groupFilter(query);
   // Invite code search ("ABC-XY12Z3").
-  if (query.q && /^[A-Z]{3}-[A-Z0-9]{6}$/i.test(query.q.trim())) {
-    const link = await InviteLink.findOne({ code: query.q.trim().toUpperCase() }).select('group').lean();
+  if (query.q && /^[A-Z]{3}-[A-Z0-9]{6,8}$/i.test(query.q.trim())) {
+    const c = query.q.trim().toUpperCase();
+    const link = await InviteLink.findOne({ $or: [{ code: c }, { legacyCode: c }] }).select('group').lean();
     if (link) filter = { _id: link.group };
   }
   const [rows, total] = await Promise.all([
@@ -327,7 +328,7 @@ export async function listInvites(query) {
 }
 
 export async function revokeInviteAsAdmin(code) {
-  const link = await InviteLink.findOneAndUpdate({ code: code.toUpperCase(), status: 'active' }, { $set: { status: 'revoked', revokedAt: new Date() } }, { returnDocument: 'after', lean: true });
+  const link = await InviteLink.findOneAndUpdate({ $or: [{ code: code.toUpperCase() }, { legacyCode: code.toUpperCase() }], status: 'active' }, { $set: { status: 'revoked', revokedAt: new Date() } }, { returnDocument: 'after', lean: true });
   if (!link) throw ApiError.notFound('Active invite link not found');
   return { revoked: true, code: link.code, groupId: String(link.group) };
 }

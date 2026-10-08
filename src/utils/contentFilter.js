@@ -22,7 +22,25 @@ const HINDI_NUMBER_WORDS = new Set([
 export const HINGLISH_ABUSE = ['KAMINA', 'KAMINE', 'KUTTA', 'KUTTE', 'HARAMI', 'SAALA', 'SALA', 'GADHA', 'ULLU', 'BEWAKOOF', 'CHUTIYA', 'BHADWA'];
 
 const DIGITS = /\d/;
-const LINK = /(https?:\/\/|www\.|\.com\b|\.in\b|\.net\b|t\.me\/|bit\.ly)/i;
+// Links: http / https, www., any "name.tld" (also "name . com", "name dot com", "name(dot)in").
+const TLDS =
+  'com|net|org|in|co|io|ai|app|dev|me|info|biz|xyz|online|site|store|shop|live|link|club|tech|tv|us|uk|ly|gl|gg|cc|ws|pro|top|vip|blog|news|edu|gov|page|website|space|fun|icu|cloud|digital|email|world|today|life|one|ink|ru|cn|de|fr|jp|au|ca|pk|bd|np|lk|ae|sa|eu|asia|mobi|tk|ml|ga|cf|gq|im|fm|sh|tel|to|be|lol|wiki|work|art|bio|chat|social|media|zone|network|group|team|agency|services|solutions';
+const DOT = '[.\\u3002\\uFF0E]';
+const LINK_PATTERNS = [
+  /\b(?:h\s*t\s*t\s*p\s*s?|hxxps?|ftp)\s*:\s*\/?\s*\/?/i, // http:// https:// (also "h t t p s :")
+  /\b(?:https?|hxxps?)\b/i, // the word http / https alone
+  new RegExp(`\\bw\\s*w\\s*w\\s*${DOT}`, 'i'), // www.
+  new RegExp(`\\b[a-z0-9][a-z0-9-]*(?:${DOT}[a-z0-9-]+)*${DOT}(?:${TLDS})\\b`, 'i'), // name.tld
+  new RegExp(`\\b[a-z0-9][a-z0-9-]*(?:\\s+${DOT}\\s*|${DOT}\\s+)(?:com|net|org)\\b`, 'i'), // name . com
+  new RegExp(`(?:[([{<]\\s*dot\\s*[)\\]}>]|\\bdot\\b)\\s*(?:${TLDS})\\b`, 'i'), // name dot com, name(dot)in
+  /\b(?:t\.me|wa\.me|bit\.ly|tinyurl|goo\.gl)\b/i,
+];
+
+/** True when the text has a link or a domain in any form. */
+export function containsLink(text) {
+  if (!text) return false;
+  return LINK_PATTERNS.some((r) => r.test(text));
+}
 const CONTACT = /(whats\s?app|telegram|insta(gram)?|snapchat|facebook|@\w{3,})/i;
 const EMAIL = /[\w.+-]+@[\w-]+\.[\w.]+/;
 const PERSONAL = /(aadhaar|aadhar|pan\s?card|passport|address\s*:)/i;
@@ -97,7 +115,7 @@ export function checkContent(text, { enabled, abuseWords = [], hinglish = false,
   if (on.has('numbers') && DIGITS.test(text)) return 'numbers';
   if (on.has('numberWords') && words.some((w) => NUMBER_WORDS.has(w) || (hindiNumbers && HINDI_NUMBER_WORDS.has(w)))) return 'numberWords';
   if (on.has('spam') && REPEAT.test(text)) return 'spam';
-  if (on.has('links') && LINK.test(text)) return 'links';
+  if (on.has('links') && containsLink(text)) return 'links';
   if (on.has('personalInfo') && (EMAIL.test(text) || PERSONAL.test(text))) return 'personalInfo';
   if (on.has('externalContact') && CONTACT.test(text)) return 'externalContact';
   return null;

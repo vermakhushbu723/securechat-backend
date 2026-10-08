@@ -8,7 +8,7 @@ import { getBlockedBy, getPublicUser, getPublicUsers } from '../../services/cach
 import { enqueuePush } from '../../services/queue.service.js';
 import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
-import { checkContent } from '../../utils/contentFilter.js';
+import { checkContent, containsLink } from '../../utils/contentFilter.js';
 import { escapeRegex, toObjectId } from '../../utils/validators.js';
 import { audit, AuditLog } from '../audit/audit.service.js';
 import { logFileAction, revokeFilesOfMessages, signFileToken } from '../files/file.service.js';
@@ -163,7 +163,7 @@ export async function postSystemMessage(groupId, actorId, event, text, targetId 
 async function enforceContent(userId, groupId, group, text) {
   if (!text?.trim()) return;
   const cs = await getContentSettings();
-  let enabled = [...new Set([...(group.settings.contentRules ?? []), ...cs.globalRules])];
+  let enabled = [...new Set([...(group.settings.contentRules ?? []), ...cs.globalRules, ...(cs.groupLinksBlocked !== false ? ['links'] : [])])];
   if (cs.abuseEnabled === false) enabled = enabled.filter((r) => r !== 'abuse');
   const rule = checkContent(text, {
     enabled,
@@ -181,11 +181,19 @@ async function enforceContent(userId, groupId, group, text) {
   const [day, week] = await Promise.all([AuditLog.countDocuments(since(86_400_000)), AuditLog.countDocuments(since(7 * 86_400_000))]);
   audit(userId, 'content_blocked', { group: groupId, meta: { rule, text: text.slice(0, 200) } });
   await applyContentPenalty(userId, { day: day + 1, week: week + 1 }, cs);
-  throw new ApiError(422, 'CONTENT_BLOCKED', 'This message cannot be sent because it contains restricted content.', {
+  throw new ApiError(422, 'CONTENT_BLOCKED', rule === 'links' ? 'Links cannot be sent in groups.' : 'This message cannot be sent because it contains restricted content.', {
     rule,
     warnings: u?.warnings ?? 1,
     maxWarnings: cs.maxWarnings,
   });
+}
+
+/** Forwards skip the content rules but a link still never reaches a group. */
+async function assertNoGroupLink(text) {
+  const cs = await getContentSettings();
+  if (cs.groupLinksBlocked !== false && containsLink(text)) {
+    throw new ApiError(422, 'CONTENT_BLOCKED', 'Links cannot be sent in groups.', { rule: 'links' });
+  }
 }
 
 export async function sendGroupMessage(userId, input, { forwardFrom = null, skipContent = false } = {}) {
@@ -203,6 +211,7 @@ export async function sendGroupMessage(userId, input, { forwardFrom = null, skip
   // Admin Blocked Keywords apply to forwards too (the list can change after the original was sent).
   await assertNoBlockedTerm(userId, input.text, 'groups', { groupId });
   if (!skipContent) await enforceContent(userId, groupId, group, input.text);
+  else await assertNoGroupLink(input.text);
 
   // Media: protected content must be an encrypted file owned by the sender.
   let media;

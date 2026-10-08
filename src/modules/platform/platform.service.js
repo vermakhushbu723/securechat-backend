@@ -35,6 +35,8 @@ export const DEFAULT_CONTENT_SETTINGS = {
   suspendAfter: 5,
   // Mobile number protection: blocked attempts in 10 minutes before 1 hour read only (0 = off).
   phoneRestrictAfter: 3,
+  // Links (http / https / www / any domain) can never be sent in groups - every member, admins too.
+  groupLinksBlocked: true,
 };
 
 /** Every admin section with its defaults. */

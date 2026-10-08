@@ -80,6 +80,36 @@ async function emitLocation(group, payload) {
   else if (vis === 'adminOnly') emitToUsers(await adminIds(group._id), 'group:location', event);
 }
 
+/**
+ * Members of a group that uses location but have no position there yet (joined before the
+ * admin turned location on, or joined without sharing) get their last known position, as
+ * long as their own location sharing is not off. Admins then see it in the member profile
+ * and on the group map at once instead of waiting for the next update.
+ */
+export async function seedMemberLocations(groupId, userIds = null) {
+  const group = await Group.findById(groupId).select('settings.location').lean();
+  if (!group || group.settings?.location?.requirement === 'off') return 0;
+  const filter = { group: groupId, status: 'active', $or: [{ location: null }, { 'location.lat': null }] };
+  if (userIds) filter.user = { $in: userIds };
+  const rows = await GroupMember.find(filter).select('user').limit(5000).lean();
+  if (!rows.length) return 0;
+  const sharing = await User.find({ _id: { $in: rows.map((r) => r.user) }, 'locationSettings.mode': { $ne: 'none' } }).select('locationSettings').lean();
+  if (!sharing.length) return 0;
+  const last = await LocationHistory.aggregate([
+    { $match: { user: { $in: sharing.map((u) => u._id) } } },
+    { $sort: { _id: -1 } },
+    { $group: { _id: '$user', lat: { $first: '$lat' }, lng: { $first: '$lng' }, place: { $first: '$place' }, accuracy: { $first: '$accuracy' }, at: { $first: '$createdAt' } } },
+  ]);
+  const live = new Map(sharing.map((u) => [String(u._id), liveActive(u.locationSettings)]));
+  for (const l of last) {
+    await GroupMember.updateOne(
+      { group: groupId, user: l._id, $or: [{ location: null }, { 'location.lat': null }] },
+      { $set: { location: { lat: l.lat, lng: l.lng, place: l.place ?? null, accuracy: l.accuracy ?? null, mode: live.get(String(l._id)) ? 'live' : 'join', updatedAt: l.at } } },
+    );
+  }
+  return last.length;
+}
+
 /** Live / manual update: stored in history and pushed to every group that uses location. */
 export async function updateMyLocation(userId, { lat, lng, place, accuracy, source }) {
   const user = await User.findById(userId).select('locationSettings displayName name').lean();

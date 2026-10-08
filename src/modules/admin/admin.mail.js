@@ -27,8 +27,12 @@ export async function addAccounts(list, { host = 'smtp.hostinger.com', port = 46
   return { added, updated, accounts: await poolStatus() };
 }
 
-export async function updateAccount(id, { active, dailyLimit, password, host, port }) {
+export async function updateAccount(id, { email, active, dailyLimit, password, host, port }) {
   const set = {};
+  if (email !== undefined) {
+    if (await MailAccount.exists({ email, _id: { $ne: id } })) throw ApiError.conflict('Another mailbox already uses this email');
+    set.email = email;
+  }
   if (active !== undefined) set.active = active;
   if (dailyLimit !== undefined) set.dailyLimit = dailyLimit;
   if (host !== undefined) set.host = host;
@@ -39,6 +43,16 @@ export async function updateAccount(id, { active, dailyLimit, password, host, po
   if (password) await clearCooldown(id);
   await invalidateAccounts();
   return { id: String(a._id), email: a.email };
+}
+
+export async function setPasswordAll(password) {
+  const rows = await MailAccount.find({}).select('_id').lean();
+  for (const r of rows) {
+    await MailAccount.updateOne({ _id: r._id }, { $set: { pass: encryptSecret(password), lastError: null, lastErrorAt: null } });
+    await clearCooldown(String(r._id));
+  }
+  await invalidateAccounts();
+  return { updated: rows.length };
 }
 
 export async function deleteAccount(id) {

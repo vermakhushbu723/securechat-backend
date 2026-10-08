@@ -149,6 +149,8 @@ const inviteSchema = new Schema(
   {
     group: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
     code: { type: String, required: true, unique: true },
+    // Old code with digits (links shared before codes became letters only) - still opens the group.
+    legacyCode: { type: String, default: undefined },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     expiresAt: { type: Date, default: null }, // null = never
     maxJoins: { type: Number, default: 0 }, // 0 = unlimited
@@ -159,6 +161,7 @@ const inviteSchema = new Schema(
   },
   { timestamps: true },
 );
+inviteSchema.index({ legacyCode: 1 }, { unique: true, sparse: true });
 
 inviteSchema.index({ group: 1, createdAt: -1 });
 

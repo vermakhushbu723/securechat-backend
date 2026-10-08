@@ -113,7 +113,7 @@ await step('create group with settings (owner, invite link, system message)', as
   eq(g1.role, 'owner', 'role');
   eq(g1.me.isAdmin, true, 'admin');
   eq(g1.settings.location.requirement, 'optional', 'location setting');
-  assert(/^[A-Z]{3}-[A-Z0-9]{6}$/.test(invite1.code), `invite code format ${invite1.code}`);
+  assert(/^[A-Z]{3}-[A-Z]{7}$/.test(invite1.code), `invite code format ${invite1.code}`);
   assert(invite1.url.endsWith(`/group/${invite1.code}`), 'invite url');
   const { items } = await api('GET', `/groups/${g1.id}/messages`, { token: tok(A) });
   assert(items.some((m) => m.type === 'system' && m.system.event === 'created'), 'created system message');

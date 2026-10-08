@@ -88,7 +88,7 @@ export function createApp() {
   api.use('/admin', adminRouter);
   // App config for clients: maintenance banner, minimum app version, direct chat on/off.
   api.get('/config', async (_req, res) => {
-    const sys = await getSetting('system');
+    const [sys, content] = await Promise.all([getSetting('system'), getSetting('content')]);
     res.json({
       ok: true,
       data: {
@@ -100,6 +100,8 @@ export function createApp() {
         groupMemberSearch: sys.groupMemberSearch !== false,
         openRegistration: sys.openRegistration,
         maxFileMb: sys.maxFileMb,
+        // Composer: "Can not send" while a link is typed in a group.
+        groupLinksBlocked: content.groupLinksBlocked !== false,
         maps: Boolean(sys.mapsEnabled !== false && (sys.mapsApiKey || env.GOOGLE_MAPS_API_KEY)),
       },
     });
