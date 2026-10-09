@@ -64,8 +64,13 @@ router.post('/me/profile', validate({ body: schemas.completeProfile }), async (r
   res.json({ ok: true, data: await users.completeProfile(req.user.id, req.valid.body) });
 });
 
+// Push notifications: the app registers its Firebase token after login and removes it on logout.
 router.post('/me/devices', validate({ body: schemas.device }), async (req, res) => {
   await users.registerDevice(req.user.id, req.valid.body);
+  res.json({ ok: true, data: null });
+});
+router.delete('/me/devices', validate({ body: z.strictObject({ token: z.string().min(10).max(4096) }) }), async (req, res) => {
+  await users.removeDevice(req.user.id, req.valid.body.token);
   res.json({ ok: true, data: null });
 });
 

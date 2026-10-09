@@ -48,6 +48,8 @@ const schema = z.object({
   MAIL_FROM_NAME: z.string().default('SecureChat'),
   // Google Maps JavaScript API key (admin System Settings can override it).
   GOOGLE_MAPS_API_KEY: z.string().default(''),
+  // Push notifications: path to the Firebase service account JSON (empty = push only logged).
+  FIREBASE_SERVICE_ACCOUNT: z.string().default(''),
   // Platform admin API (/api/v1/admin, header x-admin-key). Empty = disabled.
   ADMIN_API_KEY: z.string().default(''),
   // Admin panel 2-step code: a fixed 6 digit code instead of a random one (empty = random code by email).

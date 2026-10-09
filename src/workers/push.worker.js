@@ -6,27 +6,18 @@ import { GroupMember } from '../modules/groups/group.model.js';
 import { expireDirectMessages } from '../modules/chat/chat.service.js';
 import { expireMessages } from '../modules/groups/groupMessage.service.js';
 import { pruneLocationHistory, sendDueNotifications } from '../modules/admin/admin.system.js';
-import { User } from '../modules/users/user.model.js';
-import { onlineMap } from '../services/presence.service.js';
+import { pushToUsers } from '../services/push.service.js';
 import { PUSH_QUEUE } from '../services/queue.service.js';
 
 /**
- * Delivers push notifications for messages to offline users.
- * Plug an FCM / APNs client into `send()`; without one the payload is logged.
+ * Push notifications (Firebase Cloud Messaging) for 1-to-1 and group messages and admin
+ * broadcasts. Sent to every device of the recipient: the app hides it while that chat is open.
  */
-async function send(device, payload) {
-  logger.info({ platform: device.platform, title: payload.title }, 'Push notification (no provider configured)');
+async function pushDirect({ recipientId, senderName, preview, conversationId }) {
+  return pushToUsers([recipientId], { title: senderName, body: preview, link: `/dm/${conversationId}`, tag: `dm-${conversationId}`, data: { type: 'dm', conversationId } });
 }
 
-async function pushTo(userIds, payload) {
-  if (!userIds.length) return 0;
-  const users = await User.find({ _id: { $in: userIds } }).select('+devices').lean();
-  const devices = users.flatMap((u) => u.devices ?? []);
-  await Promise.all(devices.map((d) => send(d, payload)));
-  return devices.length;
-}
-
-/** Group message: fan out to offline, unmuted members (never the sender). */
+/** Group message: every active, unmuted member (never the sender). */
 async function pushGroup({ groupId, senderId, senderName, groupName, preview }) {
   const now = new Date();
   const members = await GroupMember.find({
@@ -37,20 +28,21 @@ async function pushGroup({ groupId, senderId, senderName, groupName, preview }) 
   })
     .select('user')
     .lean();
-  const ids = members.map((m) => String(m.user));
-  const online = await onlineMap(ids);
-  const offline = ids.filter((id) => !online.get(id));
-  return pushTo(offline, { title: groupName, body: `${senderName}: ${preview}`, data: { groupId } });
+  return pushToUsers(
+    members.map((m) => String(m.user)),
+    { title: groupName, body: `${senderName}: ${preview}`, link: `/chat/${groupId}`, tag: `g-${groupId}`, data: { type: 'group', groupId } },
+  );
 }
 
 export function startPushWorker() {
   const worker = new Worker(
     PUSH_QUEUE,
     async (job) => {
-      if (job.data.kind === 'group') return { delivered: await pushGroup(job.data) };
-      if (job.data.kind === 'broadcast') return { delivered: await pushTo(job.data.userIds, { title: job.data.title, body: job.data.body, data: { notificationId: job.data.notificationId } }) };
-      const { recipientId, senderName, preview, conversationId } = job.data;
-      return { delivered: await pushTo([recipientId], { title: senderName, body: preview, data: { conversationId } }) };
+      if (job.data.kind === 'group') return pushGroup(job.data);
+      if (job.data.kind === 'broadcast') {
+        return pushToUsers(job.data.userIds, { title: job.data.title, body: job.data.body, link: '/', tag: `n-${job.data.notificationId}`, data: { type: 'notice', notificationId: job.data.notificationId } });
+      }
+      return pushDirect(job.data);
     },
     {
       connection: createRedis('bull:worker', { maxRetriesPerRequest: null }),

@@ -151,8 +151,13 @@ export async function listBlocked(userId) {
   return rows.map((r) => users.get(String(r.blocked))).filter(Boolean);
 }
 
-export async function registerDevice(userId, { token, platform }) {
+export async function removeDevice(userId, token) {
   await User.updateOne({ _id: userId }, { $pull: { devices: { token } } });
+}
+
+export async function registerDevice(userId, { token, platform }) {
+  // A phone / browser belongs to the account signed in on it now (account switch on one device).
+  await User.updateMany({ devices: { $elemMatch: { token } } }, { $pull: { devices: { token } } });
   await User.updateOne(
     { _id: userId },
     { $push: { devices: { $each: [{ token, platform, updatedAt: new Date() }], $slice: -10 } } },

@@ -305,7 +305,8 @@ export async function sendGroupMessage(userId, input, { forwardFrom = null, skip
       senderId: String(userId),
       senderName: sender?.displayName ?? 'Member',
       groupName: group.name,
-      preview: groupPreviewText(m),
+      // Private / protected messages: the text never shows on the lock screen.
+      preview: m.visibility !== 'public' ? '🔒 New private message' : groupPreviewText(m),
     });
   }
   const [dto] = await serialize([m], userId, groupId, member);

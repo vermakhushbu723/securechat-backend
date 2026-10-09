@@ -9,7 +9,7 @@ import {
   hasBlocked,
   isBlockedBetween,
 } from '../../services/cache.service.js';
-import { isOnline, onlineMap } from '../../services/presence.service.js';
+import { onlineMap } from '../../services/presence.service.js';
 import { enqueuePush } from '../../services/queue.service.js';
 import { emitToUser } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
@@ -378,12 +378,11 @@ export async function sendMessage(senderId, input, { forwardedFrom } = {}) {
   ]);
 
   emitMessage('message:new', msg, [senderId, peerId]);
-  if (!msg.silent) notifyIfOffline(senderId, peerId, conversationId, msg).catch(() => {});
+  if (!msg.silent) notifyRecipient(senderId, peerId, conversationId, msg).catch(() => {});
   return { message: toMessageDTO(msg, senderId), duplicate: false };
 }
 
-async function notifyIfOffline(senderId, peerId, conversationId, msg) {
-  if (await isOnline(peerId)) return;
+async function notifyRecipient(senderId, peerId, conversationId, msg) {
   const member = await ConversationMember.findOne({ conversation: conversationId, user: peerId })
     .select('mutedUntil')
     .lean();
@@ -392,8 +391,9 @@ async function notifyIfOffline(senderId, peerId, conversationId, msg) {
   await enqueuePush({
     recipientId: String(peerId),
     conversationId: String(conversationId),
-    senderName: sender?.name ?? 'New message',
-    preview: previewText(msg),
+    senderName: sender?.displayName ?? sender?.name ?? 'New message',
+    // Private / protected messages: the text never shows on the lock screen.
+    preview: msg.visibility && msg.visibility !== 'public' ? '🔒 New private message' : previewText(msg),
   });
 }
 

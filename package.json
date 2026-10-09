@@ -22,6 +22,7 @@
     "test:admin": "node scripts/e2e-admin-test.js",
     "test:keywords": "node scripts/e2e-keywords-test.js",
     "test:round5": "node scripts/e2e-round5-test.js",
+    "test:push": "node scripts/e2e-push-test.js",
     "test:search-phone": "node scripts/e2e-search-phone-test.js",
     "test:phone-unit": "node scripts/phone-guard-unit-test.js",
     "test:mail": "node scripts/e2e-mail-test.js"
@@ -37,6 +38,7 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1",
+    "firebase-admin": "^13.10.0",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",

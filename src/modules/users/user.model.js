@@ -101,6 +101,7 @@ userSchema.pre('validate', function setSearchName() {
 });
 
 userSchema.index({ status: 1, createdAt: -1 });
+userSchema.index({ 'devices.token': 1 }, { sparse: true }); // push token -> its account
 
 export const User = mongoose.model('User', userSchema);
 

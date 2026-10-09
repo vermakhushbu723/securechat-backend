@@ -4,3 +4,6 @@ uploads/*
 !uploads/.gitkeep
 *.log
 secure_uploads/
+
+# Firebase service account (secret, push notifications)
+firebase-service-account.json
