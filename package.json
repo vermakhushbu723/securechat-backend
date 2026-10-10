@@ -22,6 +22,7 @@
     "test:admin": "node scripts/e2e-admin-test.js",
     "test:keywords": "node scripts/e2e-keywords-test.js",
     "test:round5": "node scripts/e2e-round5-test.js",
+    "test:payment": "node scripts/e2e-payment-test.js",
     "test:push": "node scripts/e2e-push-test.js",
     "test:search-phone": "node scripts/e2e-search-phone-test.js",
     "test:phone-unit": "node scripts/phone-guard-unit-test.js",

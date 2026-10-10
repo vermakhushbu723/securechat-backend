@@ -91,6 +91,12 @@ html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background:
   }
 
   window.scSetData = function (d) { state = d || {}; render(); };
+  // The app view can start small and grow (Android WebView): fit the pins again on every resize.
+  var resizeTimer = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { if (map) { google.maps.event.trigger(map, 'resize'); render(); } }, 120);
+  });
   window.addEventListener('hashchange', function () { state = read(); render(); });
   window.gm_authFailure = function () {
     msg.style.display = 'flex';

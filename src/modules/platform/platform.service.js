@@ -52,6 +52,14 @@ export const SETTING_DEFAULTS = {
     defaultExtensionDays: 7,
     maxExtensions: 2, // 0 = unlimited
   },
+  // Admin panel -> Payments: UPI ID / QR shown on the app's checkout.
+  payment: {
+    enabled: true,
+    upiId: 'flipflops@upi',
+    payeeName: 'SecureChat',
+    qrImageUrl: null,
+    instructions: 'Pay the plan amount with any UPI app (Google Pay, PhonePe, Paytm), then enter the UTR / transaction ID. Premium starts after the admin checks the payment.',
+  },
   location: {
     showToAdmin: true,
     showToMembers: false, // new groups: adminOnly unless the admin changes it

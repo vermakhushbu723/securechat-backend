@@ -6,6 +6,7 @@ import { ApiError } from '../../utils/ApiError.js';
 import { invalidateGroup } from '../groups/group.access.js';
 import { Group, InviteLink } from '../groups/group.model.js';
 import { publicPlans } from '../admin/admin.subscription.js';
+import * as pay from './payment.service.js';
 import * as sub from './subscription.service.js';
 
 const ok = (res, data, status = 200) => res.status(status).json({ ok: true, data });
@@ -19,6 +20,19 @@ subscriptionRouter.get('/', async (req, res) => ok(res, await sub.status(req.use
 
 // Premium plans created in the admin panel (visible ones).
 subscriptionRouter.get('/plans', async (_req, res) => ok(res, await publicPlans()));
+
+// Checkout: UPI ID / QR set by the admin, then "I have paid" with the UTR.
+subscriptionRouter.get('/payment-info', async (_req, res) => ok(res, await pay.paymentInfo()));
+subscriptionRouter.post(
+  '/payments',
+  validate({
+    body: z.strictObject({
+      planId: z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid plan'),
+      utr: z.string().trim().regex(/^[A-Za-z0-9]{6,30}$/, 'Enter the UTR / transaction ID from your UPI app (6-30 letters or digits)'),
+    }),
+  }),
+  async (req, res) => ok(res, sub.toRequestDTO(await pay.submitPayment(req.user.id, req.valid.body)), 201),
+);
 
 subscriptionRouter.post('/claim-trial', async (req, res) => ok(res, await sub.claimTrial(req.user.id)));
 

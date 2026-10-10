@@ -195,6 +195,7 @@ export async function listRequests(query) {
       decidedAt: r.decidedAt,
       decidedBy: r.decidedBy ?? null,
       grantedAs: r.grantedAs ?? null,
+      payment: r.utr ? { planName: r.planName, amount: r.amount, currency: r.currency, utr: r.utr, payTo: r.payTo } : null,
       user: u
         ? { id: String(u._id), name: u.name, internalId: internalId(u._id), phone: u.phone ?? null, email: u.email ?? null, avatarUrl: u.avatarUrl ?? null, access: a.access, trialEndsAt: a.trialEndsAt, extensionCount: u.subscription?.extensionCount ?? 0 }
         : { id: String(r.user), name: 'Deleted user', internalId: internalId(r.user) },

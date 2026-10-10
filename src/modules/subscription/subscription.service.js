@@ -123,8 +123,20 @@ export async function requireGroupAccessPlan(userId, group) {
 // User facing: status + extension / premium request
 // ---------------------------------------------------------------------------
 function requestDTO(r) {
-  return { id: String(r._id), kind: r.kind, reason: r.reason, days: r.days, status: r.status, createdAt: r.createdAt, decidedAt: r.decidedAt };
+  return {
+    id: String(r._id),
+    kind: r.kind,
+    reason: r.reason,
+    days: r.days,
+    status: r.status,
+    createdAt: r.createdAt,
+    decidedAt: r.decidedAt,
+    // UPI payment (null for a plain extension request)
+    payment: r.utr ? { planId: r.planId ? String(r.planId) : null, planName: r.planName, amount: r.amount, currency: r.currency, utr: r.utr, payTo: r.payTo } : null,
+  };
 }
+
+export const toRequestDTO = (r) => requestDTO(r);
 
 export async function status(userId) {
   const [a, requests] = await Promise.all([

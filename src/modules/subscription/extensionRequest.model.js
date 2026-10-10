@@ -13,11 +13,19 @@ const extensionRequestSchema = new Schema(
     decidedAt: { type: Date, default: null },
     decidedBy: { type: String, default: null }, // staff name
     grantedAs: { type: String, enum: ['extension', 'premium', null], default: null }, // admin chose "Premium" instead
+    // UPI payment for a plan (checkout): the admin checks the UTR before approving.
+    planId: { type: Schema.Types.ObjectId, ref: 'Plan', default: null },
+    planName: { type: String, default: null },
+    amount: { type: Number, default: null },
+    currency: { type: String, default: null },
+    utr: { type: String, default: null }, // UPI transaction reference
+    payTo: { type: String, default: null }, // UPI ID shown when the user paid
 
   },
   { timestamps: true },
 );
 
 extensionRequestSchema.index({ status: 1, _id: -1 });
+extensionRequestSchema.index({ utr: 1 }, { sparse: true });
 
 export const ExtensionRequest = mongoose.model('ExtensionRequest', extensionRequestSchema);

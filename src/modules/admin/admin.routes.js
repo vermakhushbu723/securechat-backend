@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 
 import { limiters, rateLimit } from '../../middlewares/rateLimit.js';
@@ -9,6 +10,7 @@ import { adminDeleteChain, adminFreezeChain } from '../groups/groupMessage.servi
 import * as blocked from '../moderation/blockedTerm.service.js';
 import { testPhone } from '../moderation/phoneGuard.service.js';
 import { CONTENT_RULES, getSetting, updateSetting } from '../platform/platform.service.js';
+import * as payments from '../subscription/payment.service.js';
 import { decideRequest, grantExtension, grantPremium, setAccess, setTrial } from '../subscription/subscription.service.js';
 import { setGroupPremium } from '../subscription/subscription.routes.js';
 import { blockUser, deleteUser, forceLogout, restrictUser, suspendUser, unblockUser, warnUser } from '../users/moderation.service.js';
@@ -367,6 +369,37 @@ const planBody = z.strictObject({
   visible: z.boolean().default(true),
   popular: z.boolean().default(false),
   archived: z.boolean().default(false),
+});
+
+// Payments: UPI ID / payee name / QR shown on the app's checkout.
+const qrUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 1 } });
+adminRouter.get('/settings/payment', can('subscriptions'), async (_req, res) => ok(res, await getSetting('payment')));
+adminRouter.put(
+  '/settings/payment',
+  can('subscriptions'),
+  validate({
+    body: z.strictObject({
+      enabled: bool,
+      upiId: z.string().trim().regex(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,64}$/, 'Enter a valid UPI ID, e.g. name@upi').optional(),
+      payeeName: str(60).min(1).optional(),
+      instructions: str(400).optional(),
+    }),
+  }),
+  async (req, res) => {
+    const data = await payments.updatePaymentSettings(req.valid.body);
+    logAdmin(req, req.valid.body.upiId ? `Payment UPI ID set to ${req.valid.body.upiId}` : 'Changed payment settings', 'subscriptions', { meta: req.valid.body });
+    ok(res, data);
+  },
+);
+adminRouter.post('/settings/payment/qr', can('subscriptions'), qrUpload.single('file'), async (req, res) => {
+  const data = await payments.saveQrImage(req.file);
+  logAdmin(req, 'Uploaded payment QR code', 'subscriptions');
+  ok(res, data);
+});
+adminRouter.delete('/settings/payment/qr', can('subscriptions'), async (req, res) => {
+  const data = await payments.deleteQrImage();
+  logAdmin(req, 'Removed payment QR code', 'subscriptions');
+  ok(res, data);
 });
 
 adminRouter.get('/plans', can('subscriptions'), validate({ query: z.object({ archived: z.enum(['true', 'false']).optional() }) }), async (req, res) =>
