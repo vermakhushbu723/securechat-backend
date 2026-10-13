@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { CONTENT_RULES } from '../platform/platform.service.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -90,7 +91,7 @@ const groupSchema = new Schema(
 
 groupSchema.index({ status: 1, createdAt: -1 });
 
-export const Group = mongoose.model('Group', groupSchema);
+export const Group = sqlModel('Group', groupSchema);
 
 // ---------------------------------------------------------------------------
 // Membership (+ per-user chat state). Shard key suggestion: { user: 1 }.
@@ -140,7 +141,7 @@ memberSchema.index({ group: 1, user: 1 }, { unique: true });
 memberSchema.index({ user: 1, status: 1, archived: 1, pinned: -1, lastMessageAt: -1 });
 memberSchema.index({ group: 1, status: 1, role: 1 });
 
-export const GroupMember = mongoose.model('GroupMember', memberSchema);
+export const GroupMember = sqlModel('GroupMember', memberSchema);
 
 // ---------------------------------------------------------------------------
 // Invite links: expiry, max joins, approval, revoke / reset
@@ -165,7 +166,7 @@ inviteSchema.index({ legacyCode: 1 }, { unique: true, sparse: true });
 
 inviteSchema.index({ group: 1, createdAt: -1 });
 
-export const InviteLink = mongoose.model('InviteLink', inviteSchema);
+export const InviteLink = sqlModel('InviteLink', inviteSchema);
 
 /** "Active" | "Expired" | "Revoked" | "Full" as shown in the Invite Link screen. */
 export function inviteState(link, now = new Date()) {

@@ -7,14 +7,14 @@
  */
 import { randomInt } from 'node:crypto';
 
-import { connectMongo, disconnectMongo } from '../src/db/mongo.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/database.js';
 import { closeRedis } from '../src/db/redis.js';
 import { Group, InviteLink } from '../src/modules/groups/group.model.js';
 import { seedMemberLocations } from '../src/modules/location/location.service.js';
 
 const LETTERS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
 
-await connectMongo();
+await connectDatabase();
 let codes = 0;
 for (const link of await InviteLink.find({ code: /\d/, legacyCode: { $exists: false } }).lean()) {
   const prefix = link.code.split('-')[0].replace(/[^A-Z]/g, '').padEnd(3, 'G').slice(0, 3);
@@ -38,5 +38,5 @@ for (const g of await Group.find({ status: 'active', 'settings.location.requirem
 }
 console.log(`member locations filled from last known position: ${seeded}`);
 
-await disconnectMongo();
+await disconnectDatabase();
 await closeRedis();

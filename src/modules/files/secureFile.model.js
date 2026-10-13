@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -33,7 +34,7 @@ const secureFileSchema = new Schema(
 secureFileSchema.index({ message: 1 });
 secureFileSchema.index({ dmMessage: 1 });
 
-export const SecureFile = mongoose.model('SecureFile', secureFileSchema);
+export const SecureFile = sqlModel('SecureFile', secureFileSchema);
 
 export const FILE_ACTIONS = [
   'uploaded',
@@ -60,4 +61,4 @@ const accessLogSchema = new Schema(
 
 accessLogSchema.index({ file: 1, _id: -1 });
 
-export const FileAccessLog = mongoose.model('FileAccessLog', accessLogSchema);
+export const FileAccessLog = sqlModel('FileAccessLog', accessLogSchema);

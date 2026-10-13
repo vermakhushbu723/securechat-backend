@@ -2,11 +2,11 @@ import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import mongoose from 'mongoose';
 import { pinoHttp } from 'pino-http';
 
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import { pingDatabase } from './db/database.js';
 import { redis } from './db/redis.js';
 import { requireAuth } from './middlewares/auth.js';
 import { ApiError } from './utils/ApiError.js';
@@ -57,10 +57,12 @@ export function createApp() {
 
   app.get('/health', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
   app.get('/ready', async (_req, res) => {
-    const mongo = mongoose.connection.readyState === 1;
     const timeout = new Promise((resolve) => setTimeout(resolve, 3_000, null));
-    const redisOk = (await Promise.race([redis.ping().catch(() => null), timeout])) === 'PONG';
-    res.status(mongo && redisOk ? 200 : 503).json({ ok: mongo && redisOk, mongo, redis: redisOk });
+    const [dbOk, redisOk] = await Promise.all([
+      Promise.race([pingDatabase().catch(() => false), timeout]).then(Boolean),
+      Promise.race([redis.ping().catch(() => null), timeout]).then((v) => v === 'PONG'),
+    ]);
+    res.status(dbOk && redisOk ? 200 : 503).json({ ok: dbOk && redisOk, db: dbOk, redis: redisOk });
   });
 
   // In production serve uploads from S3/CDN; locally express.static is enough.

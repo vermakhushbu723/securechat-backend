@@ -9,6 +9,7 @@ import { escapeRegex } from '../../utils/validators.js';
 import { audit } from '../audit/audit.service.js';
 import { getContentSettings } from '../platform/platform.service.js';
 import { User } from '../users/user.model.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -30,7 +31,7 @@ const blockedTermSchema = new Schema(
 
 blockedTermSchema.index({ active: 1 });
 
-export const BlockedTerm = mongoose.model('BlockedTerm', blockedTermSchema);
+export const BlockedTerm = sqlModel('BlockedTerm', blockedTermSchema);
 
 const CACHE_KEY = 'blocked-terms:v1';
 const VERSION_KEY = 'blocked-terms:version';

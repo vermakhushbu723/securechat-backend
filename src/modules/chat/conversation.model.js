@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -33,6 +34,6 @@ const conversationSchema = new Schema(
 
 conversationSchema.index({ participants: 1 });
 
-export const Conversation = mongoose.model('Conversation', conversationSchema);
+export const Conversation = sqlModel('Conversation', conversationSchema);
 
 export const pairKeyOf = (a, b) => [String(a), String(b)].sort().join(':');

@@ -10,7 +10,7 @@
  *   node scripts/admin.js requests                        pending extension / premium requests
  *   node scripts/admin.js approve <requestId> [days] | reject <requestId>
  */
-import { connectMongo, disconnectMongo } from '../src/db/mongo.js';
+import { connectDatabase, disconnectDatabase } from '../src/db/database.js';
 import { closeRedis } from '../src/db/redis.js';
 import { hashPassword } from '../src/modules/admin/admin.auth.js';
 import { Staff } from '../src/modules/admin/admin.models.js';
@@ -32,7 +32,7 @@ async function userId(ref) {
 
 const show = (a) => `${a.access}${a.until ? ` until ${new Date(a.until).toISOString().slice(0, 10)}` : ''} (${a.daysLeft} days left)`;
 
-await connectMongo();
+await connectDatabase();
 try {
   switch (cmd) {
     case 'migrate': {
@@ -116,6 +116,6 @@ try {
   console.error(err.message);
   process.exitCode = 1;
 } finally {
-  await disconnectMongo();
+  await disconnectDatabase();
   await closeRedis();
 }

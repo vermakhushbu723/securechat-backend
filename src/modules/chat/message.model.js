@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -99,7 +100,7 @@ messageSchema.index({ starredBy: 1, _id: -1 });
 messageSchema.index({ 'permissions.expiresAt': 1 }, { partialFilterExpression: { 'permissions.expiresAt': { $type: 'date' } } });
 messageSchema.index({ conversation: 1, text: 'text' }, { default_language: 'none' });
 
-export const Message = mongoose.model('Message', messageSchema);
+export const Message = sqlModel('Message', messageSchema);
 
 export function previewText(m) {
   if (m.deletedForEveryone) return 'This message was deleted';

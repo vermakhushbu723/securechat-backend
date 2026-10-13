@@ -115,8 +115,9 @@ export function checkContent(text, { enabled, abuseWords = [], hinglish = false,
   if (on.has('numbers') && DIGITS.test(text)) return 'numbers';
   if (on.has('numberWords') && words.some((w) => NUMBER_WORDS.has(w) || (hindiNumbers && HINDI_NUMBER_WORDS.has(w)))) return 'numberWords';
   if (on.has('spam') && REPEAT.test(text)) return 'spam';
-  if (on.has('links') && containsLink(text)) return 'links';
+  // An email address is personal info (its domain would also look like a link).
   if (on.has('personalInfo') && (EMAIL.test(text) || PERSONAL.test(text))) return 'personalInfo';
+  if (on.has('links') && containsLink(text)) return 'links';
   if (on.has('externalContact') && CONTACT.test(text)) return 'externalContact';
   return null;
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -28,4 +29,4 @@ const extensionRequestSchema = new Schema(
 extensionRequestSchema.index({ status: 1, _id: -1 });
 extensionRequestSchema.index({ utr: 1 }, { sparse: true });
 
-export const ExtensionRequest = mongoose.model('ExtensionRequest', extensionRequestSchema);
+export const ExtensionRequest = sqlModel('ExtensionRequest', extensionRequestSchema);

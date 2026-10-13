@@ -7,6 +7,7 @@ import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { redis } from '../../db/redis.js';
 import { ApiError } from '../../utils/ApiError.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 /**
  * Outgoing email through a pool of mailboxes (otp0@ ... otp11@prosecurely.online on Hostinger).
@@ -34,7 +35,7 @@ const mailAccountSchema = new Schema(
   { timestamps: true },
 );
 
-export const MailAccount = mongoose.model('MailAccount', mailAccountSchema);
+export const MailAccount = sqlModel('MailAccount', mailAccountSchema);
 
 // ---------------------------------------------------------------------------
 // Password encryption (FILE_ENCRYPTION_KEY, 32 bytes hex)

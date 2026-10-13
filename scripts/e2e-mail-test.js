@@ -10,8 +10,9 @@ import 'dotenv/config';
 import { spawn, spawnSync } from 'node:child_process';
 import dns from 'node:dns';
 
-import mongoose from 'mongoose';
 import { SMTPServer } from 'smtp-server';
+
+import { sql, withDatabase } from './lib/db.js';
 
 // Same resolvers as the API (mongodb+srv lookups).
 if (process.env.DNS_SERVERS) dns.setServers(process.env.DNS_SERVERS.split(',').map((x) => x.trim()).filter(Boolean));
@@ -19,7 +20,7 @@ if (process.env.DNS_SERVERS) dns.setServers(process.env.DNS_SERVERS.split(',').m
 const PORT = 4011;
 const BASE = `http://127.0.0.1:${PORT}/api/v1`;
 const TEST_DB = 'securechat_mailtest';
-const MONGO_URI = process.env.MONGO_URI.replace(/\/([^/?]*)(\?|$)/, `/${TEST_DB}$2`);
+const MYSQL_URL = withDatabase(process.env.MYSQL_URL, TEST_DB);
 const EMAIL = 'mailtest-admin@example.org';
 const PASSWORD = 'MailTest@2026';
 
@@ -84,7 +85,7 @@ function smtp(port, { auth = 'ok', busy = false, box } = {}) {
 const servers = await Promise.all([smtp(2531, { auth: 'bad' }), smtp(2532, { busy: true }), smtp(2533, { box: 'good1' }), smtp(2534, { box: 'good2' })]);
 
 // ------------------------------------------------------------------ API server on the test database
-const childEnv = { ...process.env, MONGO_URI, PORT: String(PORT), OTP_DEV_MODE: 'true', RUN_WORKERS: 'false', SMTP_HOST: '', LOG_LEVEL: 'warn' };
+const childEnv = { ...process.env, MYSQL_URL, PORT: String(PORT), OTP_DEV_MODE: 'true', RUN_WORKERS: 'false', SMTP_HOST: '', LOG_LEVEL: 'warn' };
 const made = spawnSync(process.execPath, ['scripts/admin.js', 'staff', EMAIL, PASSWORD, 'Mail Tester', 'super_admin'], { env: childEnv, encoding: 'utf8', timeout: 180_000 });
 if (!/ready/.test(made.stdout ?? '')) console.log('staff setup output:', made.stdout, made.stderr, made.error?.message);
 const server = spawn(process.execPath, ['src/server.js'], { env: childEnv, stdio: 'ignore' });
@@ -124,10 +125,8 @@ try {
     }
     accounts = (await admin('GET', '/mail-accounts')).accounts;
     eq(accounts.length, 4, 'four mailboxes');
-    const raw = await mongoose.createConnection(MONGO_URI).asPromise();
-    const row = await raw.db.collection('mailaccounts').findOne({ email: 'otp2@prosecurely.online' });
+    const [row] = await sql('SELECT pass FROM mailaccounts WHERE email = ?', ['otp2@prosecurely.online'], MYSQL_URL);
     assert(row.pass && !row.pass.includes('secret'), 'password is not stored in plain text');
-    await raw.close();
   });
 
   await step('emails are delivered even when mailboxes fail (wrong password, busy)', async () => {
@@ -205,9 +204,8 @@ try {
 } finally {
   server.kill();
   for (const s of servers) s.close();
-  const conn = await mongoose.createConnection(MONGO_URI).asPromise();
-  await conn.dropDatabase();
-  await conn.close();
+  // empty the throw-away test database
+  for (const t of await sql('SHOW TABLES', [], MYSQL_URL)) await sql(`DROP TABLE \`${Object.values(t)[0]}\``, [], MYSQL_URL);
 }
 
 const passed = results.filter(Boolean).length;

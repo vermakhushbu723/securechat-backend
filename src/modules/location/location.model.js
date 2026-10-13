@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -20,4 +21,4 @@ locationHistorySchema.index({ user: 1, _id: -1 });
 // Keep 90 days of history.
 locationHistorySchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 86_400 });
 
-export const LocationHistory = mongoose.model('LocationHistory', locationHistorySchema);
+export const LocationHistory = sqlModel('LocationHistory', locationHistorySchema);
