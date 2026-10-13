@@ -3,14 +3,14 @@ import http from 'node:http';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
-import { connectMongo, disconnectMongo } from './db/mongo.js';
+import { connectDatabase, disconnectDatabase } from './db/database.js';
 import { closeRedis } from './db/redis.js';
 import { closeQueues } from './services/queue.service.js';
 import { createSocketServer } from './socket/index.js';
 import { startPushWorker } from './workers/push.worker.js';
 
 async function main() {
-  await connectMongo();
+  await connectDatabase();
 
   const app = createApp();
   const server = http.createServer(app);
@@ -28,7 +28,7 @@ async function main() {
         `Stop it (Windows: Get-NetTCPConnection -LocalPort ${env.PORT} | Stop-Process -Id {OwningProcess}) or set PORT in .env.`,
     );
     await worker?.close();
-    await disconnectMongo();
+    await disconnectDatabase();
     await closeRedis();
     process.exit(1);
   });
@@ -46,7 +46,7 @@ async function main() {
       await new Promise((resolve) => server.close(() => resolve()));
       await worker?.close();
       await closeQueues();
-      await disconnectMongo();
+      await disconnectDatabase();
       await closeRedis();
     } finally {
       process.exit(0);

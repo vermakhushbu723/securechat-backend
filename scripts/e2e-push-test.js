@@ -10,9 +10,8 @@ import 'dotenv/config';
 
 import dns from 'node:dns';
 
-import mongoose from 'mongoose';
-
 import { api, BASE_URL, clientId } from './lib/client.js';
+import { sql } from './lib/db.js';
 
 if (process.env.DNS_SERVERS) dns.setServers(process.env.DNS_SERVERS.split(',').map((x) => x.trim()).filter(Boolean));
 
@@ -50,8 +49,7 @@ async function otpUser(name) {
 
 console.log(`\nSecureChat PUSH NOTIFICATIONS test against ${BASE_URL}\n`);
 token = (await api('POST', '/admin/auth/login', { body: { email: EMAIL, password: PASSWORD } })).token;
-const db = await mongoose.createConnection(process.env.MONGO_URI).asPromise();
-const devicesOf = async (s) => ((await db.db.collection('users').findOne({ _id: new mongoose.Types.ObjectId(s.user.id) }, { projection: { devices: 1 } }))?.devices ?? []).map((d) => d.token);
+const devicesOf = async (s) => ((await sql('SELECT devices FROM users WHERE _id = ?', [s.user.id]))[0]?.devices ?? []).map((d) => d.token);
 const as = (s) => (method, path, body) => api(method, path, { token: s.accessToken, body });
 /** Waits until the worker sent the push (Firebase rejected the fake token and it was removed). */
 async function pushedTo(s, tok, what) {
@@ -124,7 +122,6 @@ await step('muted group: no push', async () => {
 });
 
 // cleanup
-await db.close();
 for (const id of created.groups) await admin('DELETE', `/groups/${id}`).catch(() => {});
 for (const id of created.users) await admin('POST', `/users/${id}/action`, { action: 'delete' }).catch(() => {});
 

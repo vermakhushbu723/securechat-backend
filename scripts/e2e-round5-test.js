@@ -8,9 +8,8 @@ import 'dotenv/config';
 
 import dns from 'node:dns';
 
-import mongoose from 'mongoose';
-
 import { api, BASE_URL, clientId } from './lib/client.js';
+import { sql } from './lib/db.js';
 
 if (process.env.DNS_SERVERS) dns.setServers(process.env.DNS_SERVERS.split(',').map((x) => x.trim()).filter(Boolean));
 
@@ -88,10 +87,8 @@ await step('the invite link can be sent in a 1-to-1 chat unchanged', async () =>
 });
 
 await step('an old code with digits (link shared before) still opens the group', async () => {
-  const conn = await mongoose.createConnection(process.env.MONGO_URI).asPromise();
   const legacy = `RFV-${stamp.slice(0, 2).toUpperCase()}9${stamp.slice(2, 4).toUpperCase()}7`;
-  await conn.db.collection('invitelinks').updateOne({ code: invite.code }, { $set: { legacyCode: legacy } });
-  await conn.close();
+  await sql('UPDATE invitelinks SET legacyCode = ? WHERE code = ?', [legacy, invite.code]);
   const p = await api('GET', `/invites/${legacy.toLowerCase()}`);
   eq(p.code, invite.code, 'resolves to the new code');
   eq(p.group.id, G.id, 'same group');

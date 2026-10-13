@@ -2,10 +2,10 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import mongoose from 'mongoose';
 
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
+import { pingDatabase } from '../../db/database.js';
 import { redis } from '../../db/redis.js';
 import { mailEnabled, sendNoticeEmail } from '../../services/mail.service.js';
 import { poolStatus } from '../mail/mail.pool.js';
@@ -255,7 +255,7 @@ const timed = async (fn) => {
 
 export async function systemHealth() {
   const [mongo, redisPing, queue, storage, live] = await Promise.all([
-    timed(() => mongoose.connection.db.admin().ping()).catch(() => null),
+    timed(() => pingDatabase()).catch(() => null),
     timed(() => redis.ping()).catch(() => null),
     queueCounts().catch(() => null),
     storageUsage().catch(() => null),
@@ -277,7 +277,7 @@ export async function systemHealth() {
     memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     node: process.version,
     services: [
-      { name: 'REST API + MongoDB', status: mongo ? 'Healthy' : 'Down', metric: mongo ? `${mongo.ms.toFixed(1)} ms database ping` : 'Database not reachable' },
+      { name: 'REST API + MySQL', status: mongo ? 'Healthy' : 'Down', metric: mongo ? `${mongo.ms.toFixed(1)} ms database ping` : 'Database not reachable' },
       { name: 'Redis cache', status: redisPing ? 'Healthy' : 'Down', metric: redisPing ? `${redisPing.ms.toFixed(1)} ms ping` : 'Not reachable' },
       { name: 'WebSocket (real-time)', status: io ? 'Healthy' : 'Down', metric: io ? `${io.of('/').sockets.size} connections on this server` : 'Not started' },
       { name: 'Moderation engine', status: 'Healthy', metric: `${perMessage.toFixed(3)} ms / message` },

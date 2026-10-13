@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { logger } from '../../config/logger.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -20,7 +21,7 @@ auditSchema.index({ group: 1, _id: -1 });
 auditSchema.index({ actor: 1, _id: -1 });
 auditSchema.index({ action: 1, _id: -1 });
 
-export const AuditLog = mongoose.model('AuditLog', auditSchema);
+export const AuditLog = sqlModel('AuditLog', auditSchema);
 
 /** Fire-and-forget: auditing must never break the user action. */
 export function audit(actor, action, { group, target, meta } = {}) {

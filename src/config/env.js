@@ -14,8 +14,11 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   PUBLIC_URL: z.string().url().default('http://localhost:4000'),
 
-  MONGO_URI: z.string().min(1, 'MONGO_URI is required'),
-  MONGO_POOL_SIZE: z.coerce.number().int().positive().default(50),
+  // MySQL: mysql://user:password@host:3306/securechat
+  MYSQL_URL: z.string().min(1, 'MYSQL_URL is required (mysql://user:password@host:3306/database)'),
+  MYSQL_POOL_SIZE: z.coerce.number().int().positive().default(20),
+  // Old MongoDB - only read by scripts/migrate-mongo-to-mysql.js
+  MONGO_URI: z.string().default(''),
   // Optional resolvers for mongodb+srv lookups when the local DNS cannot answer SRV queries.
   DNS_SERVERS: z.string().default(''),
 

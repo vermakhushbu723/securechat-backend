@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -14,4 +15,4 @@ const blockSchema = new Schema(
 blockSchema.index({ blocker: 1, blocked: 1 }, { unique: true });
 blockSchema.index({ blocked: 1 });
 
-export const Block = mongoose.model('Block', blockSchema);
+export const Block = sqlModel('Block', blockSchema);

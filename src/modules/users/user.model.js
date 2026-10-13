@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { accessOf } from '../subscription/access.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -103,7 +104,7 @@ userSchema.pre('validate', function setSearchName() {
 userSchema.index({ status: 1, createdAt: -1 });
 userSchema.index({ 'devices.token': 1 }, { sparse: true }); // push token -> its account
 
-export const User = mongoose.model('User', userSchema);
+export const User = sqlModel('User', userSchema);
 
 /** Blocked / deleted / suspended (until the suspension ends) accounts cannot sign in or chat. */
 export function accountState(u, now = Date.now()) {

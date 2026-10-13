@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { redis } from '../../db/redis.js';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -13,7 +14,7 @@ const platformSettingSchema = new Schema(
   { timestamps: true },
 );
 
-export const PlatformSetting = mongoose.model('PlatformSetting', platformSettingSchema);
+export const PlatformSetting = sqlModel('PlatformSetting', platformSettingSchema);
 
 export const CONTENT_RULES = ['abuse', 'numbers', 'numberWords', 'spam', 'links', 'personalInfo', 'externalContact'];
 

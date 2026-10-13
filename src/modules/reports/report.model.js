@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -30,4 +31,4 @@ const reportSchema = new Schema(
 reportSchema.index({ reporter: 1, _id: -1 });
 reportSchema.index({ status: 1, _id: -1 });
 
-export const Report = mongoose.model('Report', reportSchema);
+export const Report = sqlModel('Report', reportSchema);

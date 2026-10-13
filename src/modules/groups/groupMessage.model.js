@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -125,7 +126,7 @@ groupMessageSchema.index({ starredBy: 1, _id: -1 });
 groupMessageSchema.index({ 'permissions.expiresAt': 1 }, { sparse: true });
 groupMessageSchema.index({ group: 1, text: 'text' }, { default_language: 'none' });
 
-export const GroupMessage = mongoose.model('GroupMessage', groupMessageSchema);
+export const GroupMessage = sqlModel('GroupMessage', groupMessageSchema);
 
 export function groupPreviewText(m) {
   if (m.status === 'deleted_for_everyone') return 'This message was deleted';

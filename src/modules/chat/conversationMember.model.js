@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -31,4 +32,4 @@ memberSchema.index({ conversation: 1, user: 1 }, { unique: true });
 memberSchema.index({ user: 1, hidden: 1, archived: 1, pinned: -1, lastMessageAt: -1, _id: -1 });
 memberSchema.index({ user: 1, peer: 1 });
 
-export const ConversationMember = mongoose.model('ConversationMember', memberSchema);
+export const ConversationMember = sqlModel('ConversationMember', memberSchema);

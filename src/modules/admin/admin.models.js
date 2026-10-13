@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { sqlModel } from '../../db/sql/model.js';
 
 const { Schema } = mongoose;
 
@@ -23,7 +24,7 @@ const staffSchema = new Schema(
   { timestamps: true },
 );
 
-export const Staff = mongoose.model('Staff', staffSchema);
+export const Staff = sqlModel('Staff', staffSchema);
 
 export const staffDTO = (s) => ({
   id: String(s._id),
@@ -56,7 +57,7 @@ const adminLogSchema = new Schema(
 adminLogSchema.index({ category: 1, _id: -1 });
 adminLogSchema.index({ targetId: 1, _id: -1 });
 
-export const AdminLog = mongoose.model('AdminLog', adminLogSchema);
+export const AdminLog = sqlModel('AdminLog', adminLogSchema);
 
 // ---------------------------------------------------------------------------
 // Premium plans + coupons
@@ -77,7 +78,7 @@ const planSchema = new Schema(
   { timestamps: true },
 );
 
-export const Plan = mongoose.model('Plan', planSchema);
+export const Plan = sqlModel('Plan', planSchema);
 
 const couponSchema = new Schema(
   {
@@ -93,7 +94,7 @@ const couponSchema = new Schema(
   { timestamps: true },
 );
 
-export const Coupon = mongoose.model('Coupon', couponSchema);
+export const Coupon = sqlModel('Coupon', couponSchema);
 
 // ---------------------------------------------------------------------------
 // Broadcast notifications
@@ -121,4 +122,4 @@ const notificationSchema = new Schema(
 
 notificationSchema.index({ status: 1, scheduledAt: 1 });
 
-export const Notification = mongoose.model('Notification', notificationSchema);
+export const Notification = sqlModel('Notification', notificationSchema);

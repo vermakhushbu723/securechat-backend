@@ -475,13 +475,13 @@ await step('message expiry (24h option) wipes content + revokes file', async () 
   const m = await send(s.A, g1.id, { type: 'image', media, visibility: 'private', expiry: '24h' });
   assert(m.permissions.expiresAt, 'expiresAt set');
   // Fast-forward: move expiry to the past and run the sweeper the worker runs every minute.
-  const { connectMongo, disconnectMongo } = await import('../src/db/mongo.js');
+  const { connectDatabase, disconnectDatabase } = await import('../src/db/database.js');
   const { GroupMessage } = await import('../src/modules/groups/groupMessage.model.js');
   const { expireMessages } = await import('../src/modules/groups/groupMessage.service.js');
-  await connectMongo();
+  await connectDatabase();
   await GroupMessage.updateOne({ _id: m.id }, { $set: { 'permissions.expiresAt': new Date(Date.now() - 1000) } });
   assert((await expireMessages()) >= 1, 'sweeper expired messages');
-  await disconnectMongo();
+  await disconnectDatabase();
   const after = await api('GET', `/group-messages/${m.id}`, { token: tok(P) });
   eq(after.expired, true, 'expired');
   eq(after.media, null, 'content wiped');
