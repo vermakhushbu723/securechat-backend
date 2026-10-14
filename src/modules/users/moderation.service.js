@@ -3,6 +3,8 @@ import { emitToUser, getIO, userRoom } from '../../socket/emitter.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { revokeAll } from '../auth/auth.service.js';
 import { invalidateAccess } from '../subscription/subscription.service.js';
+import { Group, GroupMember } from '../groups/group.model.js';
+import { LocationHistory } from '../location/location.model.js';
 import { toSelfUser, User } from './user.model.js';
 
 /**
@@ -62,7 +64,7 @@ export async function restrictUser(userId, restricted, { hours = null } = {}) {
 }
 
 /** Soft delete: account can no longer sign in, personal data is removed. */
-export async function deleteUser(userId, { by = null } = {}) {
+export async function deleteUser(userId, { by = null, reason = 'Account deleted by admin' } = {}) {
   const u = await User.findById(userId).select('name').lean();
   if (!u) throw ApiError.notFound('User not found');
   await update(
@@ -76,7 +78,7 @@ export async function deleteUser(userId, { by = null } = {}) {
       searchTokens: [],
       searchName: 'deleted user',
       'privacy.searchable': false,
-      'moderation.reason': 'Account deleted by admin',
+      'moderation.reason': reason,
       'moderation.at': new Date(),
       'moderation.by': by,
     },
@@ -84,6 +86,24 @@ export async function deleteUser(userId, { by = null } = {}) {
   );
   await forceLogout(userId);
   return { deleted: true, name: u.name };
+}
+
+/**
+ * The user deletes their own account (Settings -> Account -> Delete my account, required by
+ * Google Play): profile, phone, email, password, push tokens and location history are removed,
+ * the user leaves every group. Messages already received by others show "Deleted user".
+ */
+export async function deleteOwnAccount(userId) {
+  const memberships = await GroupMember.find({ user: userId, status: { $in: ['active', 'pending'] } }).select('group status').lean();
+  for (const m of memberships) {
+    await GroupMember.updateOne({ _id: m._id }, { $set: { status: 'left', location: null } });
+    if (m.status === 'active') await Group.updateOne({ _id: m.group, memberCount: { $gt: 0 } }, { $inc: { memberCount: -1 } });
+  }
+  await Promise.all([
+    LocationHistory.deleteMany({ user: userId }),
+    User.updateOne({ _id: userId }, { $set: { devices: [], 'locationSettings.mode': 'none', securityOverrides: null } }),
+  ]);
+  return deleteUser(userId, { by: 'User', reason: 'Deleted by the user' });
 }
 
 /** Admin "Send warning": warning count +1 and an in-app notice. */

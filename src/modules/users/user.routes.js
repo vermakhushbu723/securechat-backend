@@ -5,6 +5,7 @@ import { validate } from '../../middlewares/validate.js';
 import { objectId } from '../../utils/validators.js';
 import { uploadPath } from '../chat/chat.schema.js';
 import { searchPermission } from '../moderation/searchPermission.service.js';
+import { deleteOwnAccount } from './moderation.service.js';
 import * as users from './user.service.js';
 
 const schemas = {
@@ -58,6 +59,11 @@ router.get('/me', async (req, res) => {
 
 router.patch('/me', validate({ body: schemas.updateMe }), async (req, res) => {
   res.json({ ok: true, data: await users.updateMe(req.user.id, req.valid.body) });
+});
+
+// Delete my account (in the app and https://prosecurely.online/delete-account).
+router.post('/me/delete', validate({ body: z.strictObject({ confirm: z.literal('DELETE') }) }), async (req, res) => {
+  res.json({ ok: true, data: await deleteOwnAccount(req.user.id) });
 });
 
 router.post('/me/profile', validate({ body: schemas.completeProfile }), async (req, res) => {
